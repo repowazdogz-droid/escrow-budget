@@ -1,6 +1,6 @@
 /-
   Escrow/Negative.lean — the two hostile-review defects preserved as TRUE negative theorems
-  (not `sorry`, not `Fail`-encoded false statements). Each is a provable existential exhibiting a
+  (fully proved, not `Fail`-encoded false statements). Each is a provable existential exhibiting a
   concrete counterexample.
 -/
 import Escrow.Safety
