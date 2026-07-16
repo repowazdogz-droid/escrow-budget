@@ -1,48 +1,76 @@
 # SCOPE.md — exact claims, invariant, and assumptions
 
-## The safety theorem (target)
+## Two DIFFERENT properties (kept separate — this is the Floor C result)
+
+**Safety (the cap theorem)** — what the service promises:
 
 > For every execution — regardless of message **reordering, duplication, loss, retry**, and
-> (from Floor D) **crash/recovery** and **temporary partition** — the sum of successfully
-> authorised consumption never exceeds `CAP`:  `Σ_i spent[i] ≤ CAP`.
+> (from Floor D) **crash/recovery** and **temporary partition** — authorised consumption never
+> exceeds `CAP`:  `Σ spent ≤ CAP`. Its inductive form is the **inequality**
+> `SafetyLe :  Σ spent + Σ escrow + InFlight ≤ CAP`  (all terms `≥ 0`).
 
-It is a corollary of the **conserved quantity** (an inductive invariant of the protocol):
+**Conservation (a strictly stronger property)** — no budget is silently lost:
 
-> `Σ_i spent[i]  +  Σ_i escrow[i]  +  InFlight  =  CAP`,   with all terms `≥ 0`,
+> `Conserved :  Σ spent + Σ escrow + InFlight = CAP`,
 
-where `InFlight` = escrow debited from a sender but not yet credited at a receiver (including
-permanently lost transfers). Since `Σ escrow ≥ 0` and `InFlight ≥ 0`, `Σ spent ≤ CAP`.
+where `InFlight` sums each transfer id's amount while it is debited-but-not-yet-credited (each
+id once, including permanently lost transfers). `Conserved ⟹ SafetyLe`, never the reverse.
 
-**What is machine-checked now (Floor A):** the two invariants above, by **TLC** over the full
-*bounded* reachable state space (2 replicas, CAP=2, 2 charge ids, 2 transfer ids). This is a
-*bounded* result — **not** yet the unbounded theorem. The unbounded, all-N, all-execution
-version is Floor F (Lean 4), proving the invariant is preserved by every transition by
-induction. This document does **not** describe the bounded check as unbounded.
+Floors A/B fused these into one equality. Floor C shows they come apart: an **extra or
+mismatched debit only DESTROYS budget** (the sum drops → `SafetyLe` still holds, `Conserved`
+fails), whereas **only a receiver-side double-CREDIT makes budget** (the sum rises → `SafetyLe`
+fails). So the assumptions split cleanly by which property they defend.
 
-## Assumptions the theorem requires (be precise)
+**Bounded-checked now (Floors A, C):** `Safety`, `SafetyLe`, `Conserved` by **TLC** over full
+*bounded* state spaces (Floor A: units; Floor C: arbitrary amounts `{1,2}`, idempotency toggled
+by flags). Bounded evidence — **not** the unbounded theorem, which is Floor F (Lean 4). This
+document never describes a bounded check as unbounded.
 
-1. **Correct genesis.** Initially `Σ escrow = CAP` and `spent = 0`. The cap is fixed and
-   fully, disjointly partitioned at initialisation. (No mechanism mints budget later.)
-2. **Local no-overspend.** A charge of amount `a` at replica `i` requires `a ≤ escrow[i]`; it
-   moves `a` from `escrow[i]` to `spent[i]`. Escrow and spent are non-negative.
-3. **Idempotent transfers (REQUIRED for the cap theorem).** Every transfer carries a unique
-   id; the receiver credits at most once per id. Duplicate delivery is modelled and safely
-   ignored. Without this the conserved quantity breaks (a duplicate would create budget). No
-   exactly-once transport is assumed — dedup is explicit.
+## Assumptions — grouped by the property each one defends
 
-Note (correction found while implementing Floor B — a *strengthening*): CHARGE idempotency is
-**not** required for the cap-safety theorem. Double-applying one charge id moves budget from
-escrow to spent, which preserves `Σspent + Σescrow` and keeps `Σspent ≤ CAP`. Charge
-idempotency protects a **separate per-request property** — no double-charge of a single client
-request — which the reference tracks (`applied`, `per_request_ok`) and the mutation suite kills
-via a distinct check, *not* via the conserved invariant. It is therefore stated here as a
-per-request guarantee, not as a premise of the aggregate-cap theorem.
-4. **Atomic debit-before-send.** A transfer debits the sender's escrow *before* the unit is
-   in flight; the amount is never simultaneously in an escrow and in flight.
-5. **No budget creation.** No action increases the conserved total; only genesis sets it.
-6. **Amounts.** The Floor A TLA+ model uses **unit** amounts; the Floor B reference
-   implementation already supports **arbitrary non-negative** amounts (the invariant is
-   identical in shape). The TLA+ model is generalised to arbitrary amounts in Floor C.
+**Safety-critical (needed for `Σ spent ≤ CAP`):**
+
+1. **Correct genesis.** Initially `Σ escrow = CAP`, `spent = 0`; the cap is fully, disjointly
+   partitioned at init and never minted later.
+2. **Local no-overspend.** A charge/transfer of `a` at replica `i` requires `a ≤ escrow[i]`;
+   escrow and spent stay non-negative.
+3. **Receiver-side transfer idempotency.** The receiver credits **at most once per transfer
+   id**, crediting an amount that was actually debited for that id. This is the **one**
+   idempotency the cap depends on. Removing it CREATES budget → over-authorisation
+   (counterexample: `EscrowBudgetC_ReceiverDup`, 4 states).
+4. **No budget creation.** No action raises the total except genesis.
+
+**Conservation-only (needed for `= CAP`, i.e. no waste — NOT for the cap):** *These were once
+assumed to be safety-critical; Floor B and C show they are not.*
+
+5. **Charge idempotency** — no double-charge of one client request. Double-applying a charge id
+   moves escrow→spent, preserving both `SafetyLe` and `Conserved` of the aggregate; it breaks
+   only a **per-request** property (`per_request_ok`). *(Floor B; mutation-checked.)*
+6. **Sender-side transfer idempotency** — a non-idempotent retry re-debits, only *destroying*
+   budget. `SafetyLe` holds, `Conserved` fails. *(Floor C; model-checked: `SenderDup` holds
+   Safety/SafetyLe, `SenderDupConserved` violates Conserved in 3 states.)*
+7. **Globally-unique transfer ids** — two distinct transfers sharing an id each debit, but the
+   receiver dedups and credits once → budget destroyed. `SafetyLe` holds, `Conserved` fails.
+   *(Floor C; tested-only: `test_id_collision_breaks_conservation_not_safety`.)*
+
+**Modelling assumption (both properties):**
+
+8. **Atomic debit-before-send.** A transfer debits the sender before the amount is in flight;
+   the amount is never simultaneously in an escrow and in flight.
+
+Amounts are **arbitrary non-negative** (Floor B reference and Floor C model+impl). The Floor A
+TLA+ model used units; the invariant shape is identical.
+
+## Evidence grade per claim (never silently upgraded)
+
+| Claim | Evidence |
+|---|---|
+| `Safety`/`SafetyLe`/`Conserved` hold (correct protocol) | **B** model-checked (TLC, bounded) + **C** executable PBT |
+| Receiver-side idempotency is safety-critical | **B** model-checked counterexample + **C** mutation + negative-control test |
+| Sender-side idempotency is conservation-only (not safety) | **B** model-checked (both directions) + **C** mutation/test |
+| Transfer-id uniqueness is conservation-only (not safety) | **C** executable test only (not yet model-checked) |
+| Charge idempotency is per-request-only (not safety) | **B** mutation-checked (Floor B) + **C** mutation |
+| Unbounded, all-N version of any of the above | **not yet** — Floor F (Lean 4) |
 
 ## Partition behaviour (honest CAP trade-off)
 

@@ -27,7 +27,35 @@ coordination** — the honest cost is that a replica whose local escrow is exhau
 **reject** further charges until a transfer refills it (availability is traded for safety
 exactly there; see `SCOPE.md`). We claim **no** availability, fairness, or liveness.
 
-## Status — Floors A + B (this branch)
+## Floor C finding (the point of this floor)
+
+Floors A/B treated one exact equality — `Σspent + Σescrow + InFlight = CAP` — as *the* safety
+invariant. Floor C separates it into two properties and shows which assumptions each needs:
+
+- **Safety** (the cap): `Σspent + Σescrow + InFlight ≤ CAP`. Depends on exactly **one**
+  idempotency — **receiver-side transfer dedup**. A receiver double-credit *creates* budget and
+  breaks the cap.
+- **Conservation** (no waste): the exact `= CAP`. Additionally needs **sender-side** transfer
+  idempotency **and globally-unique transfer ids**.
+
+The insight: *every* extra or mismatched **debit** (sender retry, id collision, double-charge)
+only **destroys** budget — safe, just wasteful. Only a **receiver double-credit** is
+safety-critical. So charge idempotency, sender idempotency, and transfer-id uniqueness are
+**conservation/utilisation** concerns, **not** premises of the cap theorem. Verified three ways:
+the TLC config matrix (`make tlc-c`), Hypothesis PBT + adversarial replays, and mutation
+classification (`make impl-c`). Smallest counterexamples and per-claim evidence grades in
+`SCOPE.md`.
+
+## Status — Floors A + B + C (this branch)
+
+- **Floor C — distributed model + impl** (`spec/EscrowBudgetC.tla`, `impl/distributed.py`):
+  arbitrary amounts, explicit message ids, unreliable network (reorder/duplicate/loss/retry),
+  sender/receiver idempotency toggled by flags. A **4-config TLC matrix** measures each
+  assumption's necessity in both directions; a **Hypothesis stateful PBT** checks the cap under
+  random adversarial schedules; **mutation testing** (4/4) classifies each fault as
+  cap-safety / conservation-only / per-request-only. See the finding above.
+
+## Status — Floors A + B (earlier)
 
 - **Floor A — protocol model** (`spec/EscrowBudget.tla`): replicas, charge, transfer, and an
   unreliable network (reorder / duplicate / loss); idempotent transfers (explicit dedup — **no**
@@ -41,10 +69,9 @@ exactly there; see `SCOPE.md`). We claim **no** availability, fairness, or liven
   Finding (a strengthening): charge idempotency is **not** required for the cap theorem — it's
   a separate per-request property, caught by a distinct check (see `SCOPE.md`).
 
-Planned floors: **C** distributed message-passing under duplication/reordering/retry (generalised
-amounts) · **D** crash/recovery + partition · **E** distributed impl + model-based / property-based
-tests (Hypothesis) + fault injection · **F** machine-checked *unbounded* conserved-quantity
-theorem (Lean 4) · **G** release + hostile audit.
+Planned floors: **D** crash/recovery + partition model · **E** fault-injection harness (systematic
+dup/delay/partition/crash schedules) · **F** machine-checked *unbounded* theorem (Lean 4) — both
+`SafetyLe` and `Conserved`, proving inductivity for all N · **G** release + hostile audit.
 
 ## Run
 
