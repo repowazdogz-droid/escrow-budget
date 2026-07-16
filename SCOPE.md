@@ -287,18 +287,77 @@ transfer sets** and **arbitrary non-negative amounts**, using the corrected cert
 | Property | Highest evidence |
 |---|---|
 | Crash-FREE safety, all finite N, all amounts, all CAP | **MACHINE-PROVED** (Lean, `reachable_safe`) |
-| Crash/recovery safety | **model-checked** (TLC, Floor D) + **property-tested** (Floor E) — **NOT machine-proved** |
+| Crash/recovery safety (disciplined, GLOBAL crash) | **MACHINE-PROVED** (Lean F2, `durable_reachable_safe`) — see Floor F2 for exact scope |
+| Per-replica-independent crash | **model-checked** (TLC, Floor D) + **property-tested** (Floor E) — **not** in the Lean model |
 | `WF ∧ InFlightNonneg ∧ Bound ⇒ Safety` | **MACHINE-PROVED** (`certificate_implies_safety`) |
 
-No machine-checked crash theorem is claimed. TLC and PBT results remain bounded/tested evidence,
-never described as proof.
+The crash theorem covers the disciplined protocol under global (all-replica) crash; per-replica
+crash and Floor-D's exact partial-persistence semantics remain bounded/tested evidence.
 
-## Floor F2 (planned, NOT started)
+## Floor F2: machine-checked safety of the CRASH/RECOVERY protocol (Lean 4)
 
-Extending the machine proof to crash/recovery will require an invariant strictly stronger than the
-current-only certificate: current-state `WF`/`Bound` **and** durable-state `WF`/`Bound`, a relation
-between current and durable transfer/dedup state, write-ahead constraints, and preservation under
-`Persist` and `Crash`. `restore_breaks_bound` is the recorded reason. Not begun.
+`lean/Escrow/Durable*.lean` **machine-proves** the disciplined crash/recovery protocol safe, for
+arbitrary finite replica/transfer sets and non-negative amounts.
+
+- **Joint state** (`DurableState.lean`): `DState = { cur : State, dur : State }` — a volatile
+  current state and a durable checkpoint, each a Floor-F1 `State`.
+- **Joint invariant** `Jinv = Bound cur ∧ Bound dur ∧ DestOk cur ∧ DestOk dur`. Methodology per
+  the brief: we tried the **weakest** invariant first, and it is inductive — the **durable bound**
+  `Bound dur` is the single clause the hostile review (`restore_breaks_bound`) showed was missing;
+  no phase-lockstep / escrow-consistency clause is needed because the *discipline lives in the
+  transitions* (write-ahead debit and durable dedup are the durable updates in `send`/`recv`, with
+  explicit durable guards).
+- **Transitions** (`DurableProtocol.lean`): `charge` (current only), `send` (current + **durable
+  write-ahead debit**), `recv` (current + **durable dedup phase-advance**), `persist` (`dur:=cur`),
+  `crash` (`cur:=dur`), `drop`/`noop` (identity). Recovery semantics are explicit, not hidden.
+- **Headline** `Escrow.durable_reachable_safe`: every state reachable from `Dgenesis` under the
+  disciplined protocol has `Σ cur.spent ≤ CAP`, for any `rs.Nodup`, `g ∈ rs`, any `ts.Nodup`, any
+  amounts, any `CAP`. Route: `Jinv_preserved` (each transition preserves the joint invariant,
+  crash via `Bound dur`) ⇒ `dreachable_Jinv` ⇒ `durable_safety`. **Axioms `[propext, Quot.sound]`
+  only.**
+- **Negative controls** (`DurableNegative.lean`, true theorems): `lazy_debit_breaks_durable_bound`
+  (write-ahead skipped ⇒ `A dur = 2 > CAP`), `volatile_dedup_breaks_durable_bound` (durable dedup
+  skipped ⇒ `A dur = 2 > CAP`), and `restore_breaks_bound` re-exported.
+- **Mutation sensitivity** (checked out-of-band, reverted): dropping write-ahead debit, making
+  receiver dedup volatile, letting `crash` restore escrow without phase consistency, letting
+  `persist` copy balance but not dedup, and letting `recv` re-emit a credited right — each breaks
+  `Jinv_preserved`. A conservation-only mutation (e.g. extra destruction in `drop`) would survive
+  the safety proof by design.
+
+### Modelling decisions (explicit; this is an ABSTRACT model, NOT a claimed refinement)
+
+- **`crash` is global** (restores the whole current state from durable = simultaneous crash of all
+  replicas). Per-replica-independent crash is **not** covered.
+- **`persist` is full** (`dur:=cur`); selective persistence is abstracted away.
+- **Replayability via `phase`**: a dropped message keeps its right (`drop` = no-op, mirroring
+  EscrowBudgetD keeping the right in `sentT \ recvd`); duplicate delivery / retransmission after
+  recovery is refused by `recv`'s `phase=inflight` guard.
+- **Durable updates are lockstep deltas** (send/recv apply the same F1 delta to `dur` as to `cur`),
+  which is equivalent-for-safety to Floor-D's snap-to-current write-ahead.
+
+### Cross-tool correspondence (Lean ↔ TLA+ Floor D ↔ Python `durable.py`)
+
+| Concept | Lean (F2) | TLA+ `EscrowBudgetD` | Python `durable.py` |
+|---|---|---|---|
+| current escrow / spent | `cur.escrow` / `cur.spent` | `escrow` / `spent` | `DurableReplica.escrow/spent` |
+| durable escrow / spent | `dur.escrow` / `dur.spent` | `dEscrow` / `dSpent` | `d_escrow` / `d_spent` |
+| transfer status (cur/dur) | `cur.phase` / `dur.phase` | `sentT`,`recvd` / `dRecvd`+`sentMsgs` | `recvd` / `d_recvd`, `sentMsgs` |
+| write-ahead debit | durable debit in `send` | `DebitDurableBeforeSend=TRUE` | `debit_for_send` persists |
+| durable dedup | durable phase-advance in `recv` | `RecvdDurable=TRUE` | `credit` persists `d_recvd` |
+| persist / crash | `persist` / `crash` | `Persist` / `Crash` | `persist()` / `crash()` |
+| safety quantity | `A cur ≤ CAP` ⇒ `Σcur.spent≤CAP` | `SafetyLe` / `Safety` | `safety_le()` / `total_spent` |
+
+**Evidence grades (never conflated):**
+
+| Tool | What it establishes |
+|---|---|
+| **Lean (F1, F2)** | **Unbounded machine proof** of the abstract crash-free and crash/recovery protocols |
+| **TLC (Floor A–D)** | Bounded exhaustive state exploration (small configs) |
+| **Python/Hypothesis (B–E)** | Executable testing + fault injection (10⁴ runs) |
+| **differential (E)** | Bounded semantic alignment (66-state match) only |
+
+No machine-checked *refinement* between Lean and TLA+/Python is claimed — only that they model the
+same protocol, cross-checked at bounded scale.
 
 ## Trusted base (so far)
 

@@ -119,12 +119,24 @@ only — no `sorry`, no `Classical.choice`, no custom axioms** (`make lean` audi
 hostile-review defects are preserved as true negative theorems (`Escrow/Negative.lean`), and four
 controlled mutations each break the proof.
 
-**Crash/recovery is explicitly NOT machine-proved** — it remains model-checked (Floor D) and
-property-tested (Floor E) only. That extension is Floor F2 (see `SCOPE.md`), gated on a stronger
-current+durable invariant.
+## Floor F2 result (machine-checked, crash/recovery)
 
-Planned floors: **F2** machine-checked crash/recovery theorem (deferred) · **G** release +
-hostile audit.
+`lean/Escrow/Durable*.lean` machine-proves the **disciplined crash/recovery** protocol safe:
+`Escrow.durable_reachable_safe` — every state reachable from genesis under charge / write-ahead
+send / durable-dedup recv / duplicate-refusal / drop / **persist** / **crash** / no-op has
+`Σ cur.spent ≤ CAP`, for **arbitrary finite replica/transfer sets, any amounts, any CAP**. The
+joint invariant is `Bound cur ∧ Bound dur ∧ DestOk cur ∧ DestOk dur` — the **durable bound** is the
+exact clause the hostile review showed F1 was missing (`restore_breaks_bound`). **Axioms
+`[propext, Quot.sound]` only.** Both Floor-D attacks are machine-checked counterexamples
+(`lazy_debit_breaks_durable_bound`, `volatile_dedup_breaks_durable_bound`), and five controlled
+mutations each break the proof.
+
+**Scope (honest):** the crash is **global** (all-replica); per-replica-independent crash and
+Floor-D's exact partial-persistence semantics stay model-checked (D) + property-tested (E). This
+is an **abstract** model of the disciplined protocol, **not** a claimed refinement — see the
+Lean↔TLA+↔Python correspondence table and evidence grades in `SCOPE.md`.
+
+Planned floors: **G** release + hostile audit.
 
 ## Run
 

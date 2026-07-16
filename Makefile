@@ -55,13 +55,16 @@ impl-e:
 stress:
 	@python3 impl/fault_harness.py 10000
 
-## lean: Floor F1 — build the crash-free Lean 4 safety proof and audit its axioms.
+## lean: Floors F1+F2 — build the Lean proofs, scan for placeholders, and audit axioms.
 lean:
+	@if grep -RnE '\bsorry\b|\badmit\b|native_decide|^[[:space:]]*axiom ' lean/Escrow lean/Escrow.lean; then \
+	   echo "PLACEHOLDER SCAN: FAIL — sorry/admit/native_decide/axiom found"; exit 1; \
+	 else echo "PLACEHOLDER SCAN: OK — no sorry/admit/native_decide/project axiom"; fi
 	@cd lean && PATH="$(LEANPATH):$$PATH" lake build
 	@cd lean && PATH="$(LEANPATH):$$PATH" lake env lean Escrow/Audit.lean 2>/dev/null | tee .axioms.txt
 	@if grep -qiE 'sorryAx|Classical\.choice|ofReduceBool' lean/.axioms.txt; then \
 	   echo "AXIOM AUDIT: FAIL — sorry/Classical/reduceBool axiom present"; exit 1; \
-	 else echo "AXIOM AUDIT: OK — headline theorems use only [propext, Quot.sound]"; fi
+	 else echo "AXIOM AUDIT: OK — F1+F2 headline theorems use only [propext, Quot.sound]"; fi
 
 ## check: full A+B+C+D+E + theory + Floor F1 (Lean) gate.
 check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory impl-e lean
@@ -77,7 +80,8 @@ check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory imp
 	@echo "       (full 10,000-execution run: make stress)"
 	@echo "  F1:  Lean 4 machine proof of CRASH-FREE safety for arbitrary finite replica sets;"
 	@echo "       WF /\\ InFlightNonneg /\\ Bound inductive; axioms [propext, Quot.sound]; no sorry."
-	@echo "       Crash/recovery theorem DEFERRED to F2 (model-checked + tested only for now)."
+	@echo "  F2:  Lean 4 machine proof of CRASH/RECOVERY safety (disciplined, global crash);"
+	@echo "       joint Bound-cur /\\ Bound-dur invariant; write-ahead + durable-dedup load-bearing."
 	@echo "=================================================="
 
 clean:
