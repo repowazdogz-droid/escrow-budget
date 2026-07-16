@@ -14,11 +14,17 @@ tlc-adversarial:
 	 else \
 	   echo "ADVERSARIAL: FAIL — TLC did NOT catch the injected bug"; exit 1; fi
 
-## check: full Floor A gate.
-check: tlc tlc-adversarial
+## impl: Floor B — executable reference implementation: tests + mutation testing.
+impl:
+	@python3 impl/test_escrow.py
+	@python3 impl/mutation_check.py
+
+## check: full A+B gate.
+check: tlc tlc-adversarial impl
 	@echo "=================================================="
-	@echo "FLOOR A: escrow protocol model-checked (correct PASSES, broken CAUGHT)"
+	@echo "FLOOR A+B: model-checked (correct PASSES, broken CAUGHT) + reference impl"
+	@echo "           tests green, 5/5 mutants killed"
 	@echo "=================================================="
 
 clean:
-	@rm -rf spec/states
+	@rm -rf spec/states impl/__pycache__ .pytest_cache

@@ -27,21 +27,24 @@ coordination** — the honest cost is that a replica whose local escrow is exhau
 **reject** further charges until a transfer refills it (availability is traded for safety
 exactly there; see `SCOPE.md`). We claim **no** availability, fairness, or liveness.
 
-## Status — Floor A (this commit)
+## Status — Floors A + B (this branch)
 
-- **Protocol model** (`spec/EscrowBudget.tla`): replicas, charge, transfer, and an unreliable
-  network (reorder / duplicate / loss); idempotent charges and transfers (explicit dedup —
-  **no** exactly-once delivery assumed).
-- **Invariants**: `Conserved` (the exact quantity above) and `Safety` (`Σ spent ≤ CAP`).
-- **Bounded model-checking** (TLC, pinned TLA+ Tools v1.7.4, SHA-256-verified): the correct
-  model passes on the full reachable state space; a deliberately-broken variant
-  (`spec/EscrowBudgetBad.tla`, no receiver-side dedup) is **caught** by TLC — the model is not
-  vacuously green.
+- **Floor A — protocol model** (`spec/EscrowBudget.tla`): replicas, charge, transfer, and an
+  unreliable network (reorder / duplicate / loss); idempotent transfers (explicit dedup — **no**
+  exactly-once delivery assumed). Invariants `Conserved` and `Safety`, bounded-checked by **TLC**
+  (pinned TLA+ Tools v1.7.4, SHA-256-verified) over the full reachable state space. A
+  deliberately-broken variant (`spec/EscrowBudgetBad.tla`) is **caught** by TLC.
+- **Floor B — executable reference** (`impl/escrow.py`): a centralised state machine with
+  **arbitrary** non-negative amounts whose single source of truth is the conserved quantity
+  (self-checked after every op). Tests (`impl/test_escrow.py`, 8 cases incl. a negative control)
+  pass; **mutation testing** (`impl/mutation_check.py`) kills **5/5** injected faults.
+  Finding (a strengthening): charge idempotency is **not** required for the cap theorem — it's
+  a separate per-request property, caught by a distinct check (see `SCOPE.md`).
 
-Planned floors: **B** centralised reference impl + invariant · **C** distributed under
-duplication/reordering/retry (generalised amounts) · **D** crash/recovery + partition ·
-**E** executable implementation + model-based / property-based tests + fault injection ·
-**F** machine-checked *unbounded* conserved-quantity theorem (Lean 4) · **G** release + audit.
+Planned floors: **C** distributed message-passing under duplication/reordering/retry (generalised
+amounts) · **D** crash/recovery + partition · **E** distributed impl + model-based / property-based
+tests (Hypothesis) + fault injection · **F** machine-checked *unbounded* conserved-quantity
+theorem (Lean 4) · **G** release + hostile audit.
 
 ## Run
 

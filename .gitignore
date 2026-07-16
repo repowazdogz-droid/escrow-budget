@@ -2,3 +2,8 @@
 tools/tla2tools.jar
 # TLC state dumps
 spec/states/
+
+# Python bytecode
+__pycache__/
+*.pyc
+.pytest_cache/

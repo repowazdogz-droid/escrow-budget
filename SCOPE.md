@@ -25,17 +25,24 @@ induction. This document does **not** describe the bounded check as unbounded.
    fully, disjointly partitioned at initialisation. (No mechanism mints budget later.)
 2. **Local no-overspend.** A charge of amount `a` at replica `i` requires `a ≤ escrow[i]`; it
    moves `a` from `escrow[i]` to `spent[i]`. Escrow and spent are non-negative.
-3. **Idempotent charges (explicit dedup — NOT exactly-once transport).** Every charge carries
-   a unique id; re-applying the same id at a replica is a no-op. Retries and duplicate
-   requests are modelled and de-duplicated; we do **not** assume the transport delivers
-   exactly once.
-4. **Idempotent transfers.** Every transfer carries a unique id; the receiver credits at most
-   once per id. Duplicate delivery is modelled and safely ignored.
-5. **Atomic debit-before-send.** A transfer debits the sender's escrow *before* the unit is
-   in flight; the unit is never simultaneously in an escrow and in flight.
-6. **No budget creation.** No action increases the conserved total; only genesis sets it.
-7. **Floor A simplification (temporary).** Charges/transfers move a **unit** (1). Arbitrary
-   non-negative amounts are added in Floor C; the invariant is identical in shape.
+3. **Idempotent transfers (REQUIRED for the cap theorem).** Every transfer carries a unique
+   id; the receiver credits at most once per id. Duplicate delivery is modelled and safely
+   ignored. Without this the conserved quantity breaks (a duplicate would create budget). No
+   exactly-once transport is assumed — dedup is explicit.
+
+Note (correction found while implementing Floor B — a *strengthening*): CHARGE idempotency is
+**not** required for the cap-safety theorem. Double-applying one charge id moves budget from
+escrow to spent, which preserves `Σspent + Σescrow` and keeps `Σspent ≤ CAP`. Charge
+idempotency protects a **separate per-request property** — no double-charge of a single client
+request — which the reference tracks (`applied`, `per_request_ok`) and the mutation suite kills
+via a distinct check, *not* via the conserved invariant. It is therefore stated here as a
+per-request guarantee, not as a premise of the aggregate-cap theorem.
+4. **Atomic debit-before-send.** A transfer debits the sender's escrow *before* the unit is
+   in flight; the amount is never simultaneously in an escrow and in flight.
+5. **No budget creation.** No action increases the conserved total; only genesis sets it.
+6. **Amounts.** The Floor A TLA+ model uses **unit** amounts; the Floor B reference
+   implementation already supports **arbitrary non-negative** amounts (the invariant is
+   identical in shape). The TLA+ model is generalised to arbitrary amounts in Floor C.
 
 ## Partition behaviour (honest CAP trade-off)
 
