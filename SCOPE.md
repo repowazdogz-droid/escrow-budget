@@ -203,6 +203,32 @@ invariant** — every transition preserves `escrow ≥ 0` (local guard) and `A' 
 implies `Σspent ≤ CAP`. **Do not** target monotonicity (`A' ≤ A`) or conservation (`A' = A`) as
 the safety theorem; both are stronger than needed and the first is false once recovery exists.
 
+## Floor E: hostile testing of the frozen theory
+
+The certificate `WF ∧ (A ≤ CAP)` was stress-tested, not re-derived. **The theory survived
+hostile testing unchanged.**
+
+- **Hostile harness** (`impl/fault_harness.py`): a stateful Hypothesis machine composing
+  duplicated delivery, duplicated/retried send, arbitrary reorder, retry storms, loss, delayed
+  delivery, crash-before/after-persist, repeated and simultaneous crashes, over varying replica
+  count / CAP / amounts. **10,000 executions × 40 steps**: the certificate held on every step.
+  Teeth check: the same harness on a broken (volatile-recvd) protocol is caught quickly.
+- **Differential** (`impl/spec_model.py`): an independent Python BFS of `EscrowBudgetC`
+  reproduces TLC's **66** distinct reachable states exactly, with `Safety`/`SafetyLe`/`Conserved`
+  holding on all — the executable transition semantics conform to the model. No divergence.
+- **Mutation**: the dedicated suites kill **12/12** (5 reference + 4 distributed + 3 crash). A
+  conservation-only mutant (extra destruction) **survives the safety-focused harness by design**
+  — it does not break `WF`/`Bound`/`Safety`; only a conservation check catches it (test in
+  `test_floor_e.py`). No safety-breaking mutant survives.
+- **Falsification attempts (all failed to break the theory):** `WF ∧ A≤CAP` with Safety violated
+  — arithmetically impossible, never observed. Safety-holds-while-Bound-fails — reachable **only
+  in a broken protocol** and *consistent* with Bound being sufficient-not-necessary (Bound is the
+  earlier indicator). Impl traces inconsistent with the model — none (differential 66 = 66).
+
+**Evidence grades (Floor E):** hostile-harness result and differential are **property-tested**
+(C) and **model-checked-conformant** (B, via the 66-state match); the "safety ⟸ WF ∧ A≤CAP"
+implication remains **arithmetic, not machine-proved** (Floor F).
+
 ## Partition behaviour (honest CAP trade-off)
 
 During a network partition a replica serves charges **only from its local escrow** — no

@@ -114,5 +114,8 @@ class DurableCluster:
         msg = self.sentMsgs[idx]
         return self.replicas[msg.dst].credit(msg.tid, self.amtOf[msg.tid])
 
+    def drop(self, idx):                             # explicit message loss (non-retransmittable)
+        return self.sentMsgs.pop(idx)
+
     def persist(self, name): self.replicas[name].persist()
     def crash(self, name):   self.replicas[name].crash()

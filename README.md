@@ -97,9 +97,20 @@ and the retired assumption are in `SCOPE.md`.
   Finding (a strengthening): charge idempotency is **not** required for the cap theorem — it's
   a separate per-request property, caught by a distinct check (see `SCOPE.md`).
 
-Planned floors: **E** fault-injection harness (systematic dup/delay/partition/crash schedules) ·
-**F** machine-checked *unbounded* theorem (Lean 4) — `SafetyLe` inductive for all N, formalising
-"recovery is contractive on budget" · **G** release + hostile audit.
+## Floor E result (hostile testing — theory survived unchanged)
+
+The frozen certificate `WF ∧ (A ≤ CAP)` was attacked, not re-derived: a Hypothesis harness
+composing every fault (dup delivery/send, reorder, retry storms, loss, delay, crash before/after
+persist, repeated + simultaneous crashes) over varying replica count / CAP / amounts held the
+certificate across **10,000 executions × 40 steps** (`make stress`). An independent Python BFS
+reproduced TLC's **66** reachable states exactly (differential conformance). Mutation: **12/12**
+killed; a conservation-only mutant survives the *safety* harness by design (caught only by a
+conservation check). Every falsification attempt failed. **The theory survived hostile testing
+unchanged** — see `SCOPE.md`.
+
+Planned floors: **F** machine-checked *unbounded* theorem (Lean 4) — prove `WF ∧ (A ≤ CAP)`
+inductive for all N (hence `Σspent ≤ CAP`); **not** monotonicity/conservation · **G** release +
+hostile audit.
 
 ## Run
 

@@ -1,5 +1,5 @@
-# escrow-budget — Floor A/B/C/D + theory-checkpoint verification targets.
-.PHONY: tlc tlc-adversarial tlc-c tlc-d theory impl impl-c impl-d impl-theory check clean
+# escrow-budget — Floor A/B/C/D/E + theory-checkpoint verification targets.
+.PHONY: tlc tlc-adversarial tlc-c tlc-d theory impl impl-c impl-d impl-theory impl-e stress check clean
 
 ## tlc: bounded model-check the CORRECT escrow protocol; invariants must hold.
 tlc:
@@ -45,8 +45,17 @@ theory:
 impl-theory:
 	@python3 impl/test_recovery.py
 
-## check: full A+B+C+D + theory gate.
-check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory
+## impl-e: Floor E — gate-sized hostile harness + differential + teeth + falsification probe.
+impl-e:
+	@python3 impl/spec_model.py
+	@python3 impl/test_floor_e.py
+
+## stress: Floor E — the full 10,000-execution hostile fault-injection run (slow, ~90s).
+stress:
+	@python3 impl/fault_harness.py 10000
+
+## check: full A+B+C+D+E + theory gate.
+check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory impl-e
 	@echo "=================================================="
 	@echo "FLOOR A+B+C+D + THEORY: model-checked + reference + distributed + crash/recovery"
 	@echo "  A/B: correct PASSES, broken CAUGHT; 5/5 reference mutants killed"
@@ -55,6 +64,8 @@ check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory
 	@echo "       budget -> 'receiver-side only' REFUTED, creation/destruction law holds; 3/3 mutants"
 	@echo "  THEORY: Safety (A<=CAP) != Non-creation (A'<=A) != Conservation (A'=A); safe reclaim"
 	@echo "          raises A within headroom (D refuted); local rule is A'<=CAP, not A'<=A"
+	@echo "  E:   differential 66==66 vs TLC; hostile harness holds; broken caught; 12/12 mutants"
+	@echo "       (full 10,000-execution run: make stress)"
 	@echo "=================================================="
 
 clean:
