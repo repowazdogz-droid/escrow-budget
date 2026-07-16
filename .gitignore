@@ -1,0 +1,4 @@
+# Pinned TLA+ Tools jar is downloaded on demand + SHA-256-verified (scripts/run-tlc.sh); not committed
+tools/tla2tools.jar
+# TLC state dumps
+spec/states/
