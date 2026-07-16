@@ -46,7 +46,35 @@ the TLC config matrix (`make tlc-c`), Hypothesis PBT + adversarial replays, and 
 classification (`make impl-c`). Smallest counterexamples and per-claim evidence grades in
 `SCOPE.md`.
 
-## Status — Floors A + B + C (this branch)
+## Floor D result (crash/recovery — the theory got *simpler*)
+
+Floor D treated Floor C's asymmetry as a hypothesis and attacked it with crashes and partitions.
+Outcome:
+
+- **The narrow reading is FALSE.** "Receiver-side faults are the only safety-critical faults" is
+  refuted by a 3-state counterexample: a **sender** that debits escrow but crashes *before
+  persisting the debit* creates budget (escrow reverts high while the transfer is in flight).
+- **The structural reading SURVIVED every refutation attempt** (full-state-space TLC hunt +
+  400×50-step crash PBT + mutation): *only budget-**creating** faults break safety; budget-
+  **destroying** faults are safe.* Crashes that lose un-persisted work only destroy budget
+  (`Conserved` fails, `Safety` holds).
+
+**The simplification:** crashes and partitions add **no new kind** of safety boundary. Safety is
+exactly *"no reachable action, recovery included, increases the conserved quantity above CAP"* —
+**recovery must be contractive on budget.** The two crash-era safety requirements (write-ahead
+the debit before emitting; keep receiver-dedup durable) are just the two concrete ways a crash
+could otherwise create budget. Verified three ways: `make tlc-d`, `make impl-d`. Counterexamples
+and the retired assumption are in `SCOPE.md`.
+
+## Status — Floor D (this branch)
+
+- **Floor D — crash/recovery model + impl** (`spec/EscrowBudgetD.tla`, `impl/durable.py`):
+  durable vs volatile state, `Persist`/`Crash`, monotonic external network (models partition,
+  healing, retransmission-after-recovery), two durability disciplines toggled by flags. A
+  4-config TLC matrix (refutation hunt + both crash safety-faults + destruction control), a
+  Hypothesis crash-PBT, and mutation testing (3/3, classified cap-safety vs conservation-only).
+
+## Status — Floors A + B + C (earlier)
 
 - **Floor C — distributed model + impl** (`spec/EscrowBudgetC.tla`, `impl/distributed.py`):
   arbitrary amounts, explicit message ids, unreliable network (reorder/duplicate/loss/retry),
@@ -69,9 +97,9 @@ classification (`make impl-c`). Smallest counterexamples and per-claim evidence 
   Finding (a strengthening): charge idempotency is **not** required for the cap theorem — it's
   a separate per-request property, caught by a distinct check (see `SCOPE.md`).
 
-Planned floors: **D** crash/recovery + partition model · **E** fault-injection harness (systematic
-dup/delay/partition/crash schedules) · **F** machine-checked *unbounded* theorem (Lean 4) — both
-`SafetyLe` and `Conserved`, proving inductivity for all N · **G** release + hostile audit.
+Planned floors: **E** fault-injection harness (systematic dup/delay/partition/crash schedules) ·
+**F** machine-checked *unbounded* theorem (Lean 4) — `SafetyLe` inductive for all N, formalising
+"recovery is contractive on budget" · **G** release + hostile audit.
 
 ## Run
 

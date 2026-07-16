@@ -1,5 +1,5 @@
-# escrow-budget — Floor A/B/C verification targets.
-.PHONY: tlc tlc-adversarial tlc-c impl impl-c check clean
+# escrow-budget — Floor A/B/C/D verification targets.
+.PHONY: tlc tlc-adversarial tlc-c tlc-d impl impl-c impl-d check clean
 
 ## tlc: bounded model-check the CORRECT escrow protocol; invariants must hold.
 tlc:
@@ -28,13 +28,23 @@ impl-c:
 	@python3 impl/test_distributed.py
 	@python3 impl/mutation_distributed.py
 
-## check: full A+B+C gate.
-check: tlc tlc-adversarial impl tlc-c impl-c
+## tlc-d: Floor D — crash/recovery/partition matrix (refutation hunt + both crash safety-faults).
+tlc-d:
+	@bash scripts/floorD-matrix.sh
+
+## impl-d: Floor D — crash/recovery impl: PBT with crashes + adversarial replays + mutation.
+impl-d:
+	@python3 impl/test_durable.py
+	@python3 impl/mutation_durable.py
+
+## check: full A+B+C+D gate.
+check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d
 	@echo "=================================================="
-	@echo "FLOOR A+B+C: model-checked + reference impl + distributed impl"
+	@echo "FLOOR A+B+C+D: model-checked + reference + distributed + crash/recovery"
 	@echo "  A/B: correct PASSES, broken CAUGHT; 5/5 reference mutants killed"
-	@echo "  C:   4-config matrix confirms receiver-idemp is cap-safety-critical,"
-	@echo "       sender-idemp is conservation-only; PBT green; 4/4 mutants killed"
+	@echo "  C:   receiver-idemp cap-safety-critical, sender-idemp conservation-only; 4/4 mutants"
+	@echo "  D:   crash refutation hunt survives; lazy-debit (SENDER) + volatile-recvd both CREATE"
+	@echo "       budget -> 'receiver-side only' REFUTED, creation/destruction law holds; 3/3 mutants"
 	@echo "=================================================="
 
 clean:

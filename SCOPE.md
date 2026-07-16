@@ -35,10 +35,18 @@ document never describes a bounded check as unbounded.
 2. **Local no-overspend.** A charge/transfer of `a` at replica `i` requires `a ≤ escrow[i]`;
    escrow and spent stay non-negative.
 3. **Receiver-side transfer idempotency.** The receiver credits **at most once per transfer
-   id**, crediting an amount that was actually debited for that id. This is the **one**
-   idempotency the cap depends on. Removing it CREATES budget → over-authorisation
+   id**, crediting an amount that was actually debited for that id. Removing it CREATES budget
    (counterexample: `EscrowBudgetC_ReceiverDup`, 4 states).
-4. **No budget creation.** No action raises the total except genesis.
+4. **Durable receiver dedup (Floor D).** The receiver's dedup set survives crashes; otherwise a
+   crash loses it while the credited balance is durable, and a retransmit re-credits
+   (counterexample: `EscrowBudgetD_VolatileRecvd`, 4 states).
+5. **Write-ahead debit before emit (Floor D).** A transfer's escrow debit is durable *before*
+   the message is emitted; otherwise a crash reverts the debit while the message is in flight,
+   and a **sender-side** crash creates budget (counterexample: `EscrowBudgetD_LazyDebit`, 3
+   states — this refuted the "receiver-side only" reading; see below).
+6. **No budget creation.** No reachable action — **including crash recovery** — raises the total
+   except genesis. (Assumptions 3–5 are the concrete ways this can be violated once crashes
+   exist; see the structural finding.)
 
 **Conservation-only (needed for `= CAP`, i.e. no waste — NOT for the cap):** *These were once
 assumed to be safety-critical; Floor B and C show they are not.*
@@ -70,7 +78,42 @@ TLA+ model used units; the invariant shape is identical.
 | Sender-side idempotency is conservation-only (not safety) | **B** model-checked (both directions) + **C** mutation/test |
 | Transfer-id uniqueness is conservation-only (not safety) | **C** executable test only (not yet model-checked) |
 | Charge idempotency is per-request-only (not safety) | **B** mutation-checked (Floor B) + **C** mutation |
+| Safety survives all crash/partition/retransmit interleavings (disciplined) | **B** model-checked (`EscrowBudgetD`, full state space) + **C** PBT with crashes |
+| Durable receiver dedup is safety-critical | **B** model-checked counterexample + **C** replay/mutation |
+| Write-ahead debit is safety-critical (sender-side crash) | **B** model-checked counterexample + **C** replay/mutation |
+| Crashes destroy budget (Conserved fails, Safety holds) | **B** model-checked + **C** replay |
 | Unbounded, all-N version of any of the above | **not yet** — Floor F (Lean 4) |
+
+## Floor D: the theorem changed — which assumption moved, and why
+
+**Refuted (narrow reading of Floor C's asymmetry):** *"receiver-side faults are the only
+safety-critical faults."* Counterexample `EscrowBudgetD_LazyDebit` (3 states): a **sender**
+debits escrow in volatile memory, emits the transfer, then **crashes before persisting the
+debit**; on recovery escrow reverts high while the message is still in flight → `Σescrow +
+InFlight = 3 > CAP = 2`. Budget is created by a **sender-side** crash. The narrow reading is
+false and is retired.
+
+**What moved:** nothing was removed; **two new safety-critical assumptions appeared** with
+crashes — *durable receiver dedup* (#4) and *write-ahead debit* (#5). Both were added to the
+safety group only after a model-checked counterexample forced them (never pre-emptively).
+
+**Survived (structural reading):** *"only budget-CREATING faults break safety; budget-DESTROYING
+faults are safe."* The refutation hunt (`EscrowBudgetD`, correct discipline, full state space)
+found **no** crash/partition/retransmit interleaving that breaks `Safety`/`SafetyLe`. Crashes
+that lose un-persisted work only **destroy** budget: `EscrowBudgetD_Conserved` shows `Conserved`
+fails under crashes while `Safety` holds. Both crash *safety*-faults (lazy-debit, volatile-recvd)
+**create** budget; the destruction mutant (`crash-drops-inflight`) is caught only by
+conservation. So the safety boundary is exactly *budget creation* — on **either** side.
+
+**The simplification this yields (see README / report section G):** crashes and partitions
+introduce **no new kind** of safety boundary. Safety reduces to a single structural requirement —
+**no reachable action, recovery included, may increase the conserved quantity
+`Σspent + Σescrow + InFlight` above CAP** (equivalently: *recovery must be contractive on
+budget*). Write-ahead debit and durable receiver-dedup are not two separate rules but the two
+concrete ways a crash could otherwise violate that one requirement.
+
+**Note on `Conserved` under crashes:** it is **not** preserved (crashes lose budget). We do not
+claim it in the presence of crashes; only `Safety`/`SafetyLe` are claimed there.
 
 ## Partition behaviour (honest CAP trade-off)
 
