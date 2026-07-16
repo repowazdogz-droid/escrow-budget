@@ -2,7 +2,7 @@
 
 ## Two DIFFERENT properties (kept separate — this is the Floor C result)
 
-**Safety (the cap theorem)** — what the service promises:
+**Safety (the cap theorem)** — what the protocol guarantees:
 
 > For every execution — regardless of message **reordering, duplication, loss, retry**, and
 > (from Floor D) **crash/recovery** and **temporary partition** — authorised consumption never
