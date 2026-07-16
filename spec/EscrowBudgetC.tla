@@ -105,4 +105,11 @@ TypeOK ==
 Safety    == SumSpent =< CAP
 SafetyLe  == SumSpent + SumEscrow + InFlight =< CAP
 Conserved == SumSpent + SumEscrow + InFlight =  CAP
+
+\* Transition-level NON-CREATION check for the current (recovery-free) protocol: authority A never
+\* rises on any step. Expected to HOLD here — the current protocol has no reclaim, so it is
+\* monotone. (Recovery.tla shows monotonicity is NOT necessary for safety; a safe reclaim breaks
+\* it while keeping A ≤ CAP.)
+A_C     == SumSpent + SumEscrow + InFlight
+Amono   == [][A_C' =< A_C]_vars
 =============================================================================

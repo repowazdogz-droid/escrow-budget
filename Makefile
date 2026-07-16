@@ -1,5 +1,5 @@
-# escrow-budget — Floor A/B/C/D verification targets.
-.PHONY: tlc tlc-adversarial tlc-c tlc-d impl impl-c impl-d check clean
+# escrow-budget — Floor A/B/C/D + theory-checkpoint verification targets.
+.PHONY: tlc tlc-adversarial tlc-c tlc-d theory impl impl-c impl-d impl-theory check clean
 
 ## tlc: bounded model-check the CORRECT escrow protocol; invariants must hold.
 tlc:
@@ -37,14 +37,24 @@ impl-d:
 	@python3 impl/test_durable.py
 	@python3 impl/mutation_durable.py
 
-## check: full A+B+C+D gate.
-check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d
+## theory: checkpoint — Safety vs Non-creation vs Conservation are distinct (model-checked).
+theory:
+	@bash scripts/theory-matrix.sh
+
+## impl-theory: checkpoint — executable safety cert under safe recovery + the four distinctions.
+impl-theory:
+	@python3 impl/test_recovery.py
+
+## check: full A+B+C+D + theory gate.
+check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory
 	@echo "=================================================="
-	@echo "FLOOR A+B+C+D: model-checked + reference + distributed + crash/recovery"
+	@echo "FLOOR A+B+C+D + THEORY: model-checked + reference + distributed + crash/recovery"
 	@echo "  A/B: correct PASSES, broken CAUGHT; 5/5 reference mutants killed"
 	@echo "  C:   receiver-idemp cap-safety-critical, sender-idemp conservation-only; 4/4 mutants"
-	@echo "  D:   crash refutation hunt survives; lazy-debit (SENDER) + volatile-recvd both CREATE"
+	@echo "  D:   crash refutation hunt survives; lazy-debit (SENDER)+volatile-recvd both CREATE"
 	@echo "       budget -> 'receiver-side only' REFUTED, creation/destruction law holds; 3/3 mutants"
+	@echo "  THEORY: Safety (A<=CAP) != Non-creation (A'<=A) != Conservation (A'=A); safe reclaim"
+	@echo "          raises A within headroom (D refuted); local rule is A'<=CAP, not A'<=A"
 	@echo "=================================================="
 
 clean:

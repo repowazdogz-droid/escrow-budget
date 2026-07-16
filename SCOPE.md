@@ -115,6 +115,94 @@ concrete ways a crash could otherwise violate that one requirement.
 **Note on `Conserved` under crashes:** it is **not** preserved (crashes lose budget). We do not
 claim it in the presence of crashes; only `Safety`/`SafetyLe` are claimed there.
 
+## Theory checkpoint: Safety ≠ Non-creation ≠ Conservation
+
+The Floor-D checkpoint proposed a monotonicity "law" (`A⁺` never increases). That **conflated
+three distinct properties** and is corrected here. Let `A = Σspent + Σescrow + InFlight` (the
+**signed** linear authority in circulation).
+
+**Corrected definitions (kept apart):**
+
+| Name | Statement | Kind |
+|---|---|---|
+| **Safety** | `Σspent ≤ CAP` | state predicate (the claim) |
+| **Bound** | `A ≤ CAP` | state predicate (inductive safety certificate) |
+| **Well-formedness (WF)** | `∀i: escrow[i] ≥ 0` | state predicate (solvency / no overdraft) |
+| **Non-creation** | `A' ≤ A` on every step | transition property |
+| **Conservation** | `A' = A` on every step | transition property |
+
+**Formal questions — which are actually true:**
+
+- **A. `A⁺ ≤ CAP ⟹ Σspent ≤ CAP`** — **TRUE by arithmetic** for the *floored* `A⁺ = Σspent +
+  Σmax(escrow,0) + InFlight` (all terms ≥ 0 ⟹ `Σspent ≤ A⁺`). For the *signed* `A` it is
+  **FALSE without WF** (overdraft: `A = CAP` yet `Σspent > CAP`); **TRUE with `WF`**.
+- **B. genesis `A = CAP` + every step non-increasing ⟹ Safety** — **TRUE** (induction: `A` stays
+  ≤ CAP, then A). This is a **sufficient** condition, not necessary.
+- **C. every safety violation requires a state with `A > CAP`** — **formulation-dependent.** TRUE
+  for floored `A⁺` (safety fails ⟹ `A⁺ ≥ Σspent > CAP`). **FALSE for signed `A`**: the overdraft
+  counterexample has `Σspent > CAP` while signed `A = CAP` — the violation is a WF break, not an
+  `A`-increase.
+- **D. every increase in `A` is a safety violation** — **FALSE.** Model-checked counterexample
+  (`Recovery_Monotone`, 3 states): `A = 3 →` Lose `→ A = 2 →` safe Reclaim `→ A = 3`. The reclaim
+  **raises `A` from 2 to 3**, but `3 ≤ CAP`, so Safety holds. Non-creation fails; Safety intact.
+
+**The local transition rule — necessary and sufficient vs sufficient-only:**
+
+- **`A' ≤ CAP`** (with `WF` maintained) is **necessary and sufficient** to keep `Bound`/Safety
+  inductively. This is the safety rule.
+- **`A' ≤ A` (non-creation / monotonicity)** is **sufficient only**, **not necessary**, and
+  **false for legitimate recovery**: a safe reclaim of stranded authority raises `A` within
+  headroom. Requiring monotonicity would forbid recovering lost budget for no safety benefit.
+- **`A' = A` (conservation)** is stronger still and **already false** in our protocol (crashes and
+  drops destroy budget, safely). Not claimed under faults.
+
+Trade-off, stated plainly: *non-increasing `A` prevents authority re-creation entirely (simple,
+but bans safe recovery); bounded `A' ≤ CAP` permits recovering previously lost or stranded
+authority while still guaranteeing safety.* We adopt the **bound**, not monotonicity.
+
+**Transition classification (signed `A`; WF tracked separately):**
+
+| Class | Δ`A` | examples | Safety |
+|---|---|---|---|
+| conserving | `= 0` | charge, send, receive, drop, persist, idempotent retry, double-charge | safe |
+| authority-destroying | `< 0` | sender double-debit, id-collision, crash-loss, dropped in-flight | safe |
+| authority-restoring within headroom | `> 0`, `A' ≤ CAP` | **safe reclaim** | safe |
+| authority-creating beyond CAP | `> 0`, `A' > CAP` | double-credit, credit-without-debit, debit-revert-live-msg, unsafe reclaim | **UNSAFE** |
+| overdraft (separate axis) | `= 0` (signed) | spend/charge past escrow | **UNSAFE** — breaks WF, not `A` |
+
+The overdraft row is why signed `A` alone is not a certificate: it is conserving in `A` yet unsafe,
+caught only by `WF` (or by the floored `A⁺`).
+
+**Chosen formulation (clearest honest theorem):** the **signed linear `A` plus an explicit
+`WF: escrow ≥ 0` invariant**, over the floored `A⁺` and over an explicit debt term.
+Rationale: `A` stays **linear**, so Conservation (`A' = A`), Non-creation (`A' ≤ A`) and Bound
+(`A ≤ CAP`) are all clean statements about the *same* quantity — exactly the separation required.
+Flooring (`A⁺`) buys a single sufficient scalar and makes statement C hold, but is **non-linear**
+(muddies conservation) and **hides** the overdraft-vs-creation distinction. An explicit
+authority-minus-debt representation is unnecessary here because overdraft is **disallowed** (a WF
+violation), not a state to be settled.
+
+> **Safety theorem (corrected):** for all reachable states, `WF ∧ (A ≤ CAP)`, and hence
+> `Σspent ≤ CAP`. Maintained by: the local no-overspend guard (preserves `WF`) and the local
+> bound `A' ≤ CAP` (preserves `Bound`). **Not** by monotonicity.
+
+**Evidence grades (never upgraded):**
+
+| Claim | Evidence |
+|---|---|
+| `WF ∧ A ≤ CAP ⟹ Σspent ≤ CAP` | arithmetic (by inspection); **not** machine-checked (Floor F) |
+| Safety/Bound hold under safe recovery | **B** model-checked (`Recovery_Safe`, full space) + **C** PBT |
+| Non-creation holds for the *current* protocol | **B** model-checked (`EscrowBudgetC_Monotone`, `[][A'≤A]`) |
+| Non-creation is **not** necessary (safe A-increase exists) | **B** counterexample (`Recovery_Monotone`) + **C** test |
+| Conservation fails while Safety holds | **B** (`Recovery_Conservation`) + **C** test |
+| Unguarded reclaim creates beyond CAP | **B** (`Recovery_Unsafe`) + **C** test |
+| Overdraft is conserving in signed `A` yet unsafe (needs WF) | **C** executable test only |
+
+**Revised Lean (Floor F) target:** prove, for all N, that `WF ∧ (A ≤ CAP)` is an **inductive
+invariant** — every transition preserves `escrow ≥ 0` (local guard) and `A' ≤ CAP` — and that it
+implies `Σspent ≤ CAP`. **Do not** target monotonicity (`A' ≤ A`) or conservation (`A' = A`) as
+the safety theorem; both are stronger than needed and the first is false once recovery exists.
+
 ## Partition behaviour (honest CAP trade-off)
 
 During a network partition a replica serves charges **only from its local escrow** — no
