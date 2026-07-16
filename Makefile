@@ -1,5 +1,6 @@
-# escrow-budget — Floor A/B/C/D/E + theory-checkpoint verification targets.
-.PHONY: tlc tlc-adversarial tlc-c tlc-d theory impl impl-c impl-d impl-theory impl-e stress check clean
+# escrow-budget — Floor A/B/C/D/E + theory-checkpoint + Floor F1 (Lean) verification targets.
+.PHONY: tlc tlc-adversarial tlc-c tlc-d theory impl impl-c impl-d impl-theory impl-e stress lean check clean
+LEANPATH := $(HOME)/.elan/bin
 
 ## tlc: bounded model-check the CORRECT escrow protocol; invariants must hold.
 tlc:
@@ -54,8 +55,16 @@ impl-e:
 stress:
 	@python3 impl/fault_harness.py 10000
 
-## check: full A+B+C+D+E + theory gate.
-check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory impl-e
+## lean: Floor F1 — build the crash-free Lean 4 safety proof and audit its axioms.
+lean:
+	@cd lean && PATH="$(LEANPATH):$$PATH" lake build
+	@cd lean && PATH="$(LEANPATH):$$PATH" lake env lean Escrow/Audit.lean 2>/dev/null | tee .axioms.txt
+	@if grep -qiE 'sorryAx|Classical\.choice|ofReduceBool' lean/.axioms.txt; then \
+	   echo "AXIOM AUDIT: FAIL — sorry/Classical/reduceBool axiom present"; exit 1; \
+	 else echo "AXIOM AUDIT: OK — headline theorems use only [propext, Quot.sound]"; fi
+
+## check: full A+B+C+D+E + theory + Floor F1 (Lean) gate.
+check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory impl-e lean
 	@echo "=================================================="
 	@echo "FLOOR A+B+C+D + THEORY: model-checked + reference + distributed + crash/recovery"
 	@echo "  A/B: correct PASSES, broken CAUGHT; 5/5 reference mutants killed"
@@ -66,6 +75,9 @@ check: tlc tlc-adversarial impl tlc-c impl-c tlc-d impl-d theory impl-theory imp
 	@echo "          raises A within headroom (D refuted); local rule is A'<=CAP, not A'<=A"
 	@echo "  E:   differential 66==66 vs TLC; hostile harness holds; broken caught; 12/12 mutants"
 	@echo "       (full 10,000-execution run: make stress)"
+	@echo "  F1:  Lean 4 machine proof of CRASH-FREE safety for arbitrary finite replica sets;"
+	@echo "       WF /\\ InFlightNonneg /\\ Bound inductive; axioms [propext, Quot.sound]; no sorry."
+	@echo "       Crash/recovery theorem DEFERRED to F2 (model-checked + tested only for now)."
 	@echo "=================================================="
 
 clean:

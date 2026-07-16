@@ -108,8 +108,22 @@ killed; a conservation-only mutant survives the *safety* harness by design (caug
 conservation check). Every falsification attempt failed. **The theory survived hostile testing
 unchanged** — see `SCOPE.md`.
 
-Planned floors: **F** machine-checked *unbounded* theorem (Lean 4) — prove `WF ∧ (A ≤ CAP)`
-inductive for all N (hence `Σspent ≤ CAP`); **not** monotonicity/conservation · **G** release +
+## Floor F1 result (machine-checked, crash-free)
+
+`lean/` machine-proves the **crash-free** protocol safe in **Lean 4** (pinned `v4.32.0`, no
+mathlib): `Escrow.reachable_safe` — every state reachable from genesis has `Σspent ≤ CAP`, for
+**arbitrary finite replica/transfer sets, arbitrary non-negative amounts, any CAP including 0**.
+The inductive certificate is the corrected `WF ∧ InFlightNonneg ∧ Bound` (the `InFlightNonneg`
+hypothesis is the hostile-review fix, load-bearing over ℤ). **Axioms: `[propext, Quot.sound]`
+only — no `sorry`, no `Classical.choice`, no custom axioms** (`make lean` audits this). The two
+hostile-review defects are preserved as true negative theorems (`Escrow/Negative.lean`), and four
+controlled mutations each break the proof.
+
+**Crash/recovery is explicitly NOT machine-proved** — it remains model-checked (Floor D) and
+property-tested (Floor E) only. That extension is Floor F2 (see `SCOPE.md`), gated on a stronger
+current+durable invariant.
+
+Planned floors: **F2** machine-checked crash/recovery theorem (deferred) · **G** release +
 hostile audit.
 
 ## Run

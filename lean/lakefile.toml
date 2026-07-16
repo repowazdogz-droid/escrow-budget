@@ -1,0 +1,5 @@
+name = "escrow"
+defaultTargets = ["Escrow"]
+
+[[lean_lib]]
+name = "Escrow"

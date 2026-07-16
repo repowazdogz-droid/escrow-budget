@@ -253,8 +253,55 @@ unit is gone) but never *safety*.
 - **No unbounded theorem yet** (Floor A is bounded TLC only; Floor F is the machine-checked
   unbounded proof).
 
+## Floor F1: machine-checked safety of the CRASH-FREE protocol (Lean 4)
+
+`lean/` is a pinned, mathlib-free Lean 4 development (`lean-toolchain` = `v4.32.0`) that
+**machine-proves** the crash-free distributed protocol safe for **arbitrary finite replica and
+transfer sets** and **arbitrary non-negative amounts**, using the corrected certificate.
+
+- **Model** (`Escrow/State.lean`, `Escrow/Protocol.lean`): per-replica `escrow`/`spent : R → Nat`,
+  a transfer `Phase` (unsent/inflight/received) with `amt`/`dest`, `InFlight = Σ_{inflight} amt`.
+  Transitions `charge`, `send`, `recv`, `drop`, `noop`. **`drop` is a no-op on safety state** —
+  mirroring EscrowBudgetC, where a dropped transfer's right stays in `sentT \ recvd`, so `A` is
+  unchanged (not decreased). Amounts are `Nat` (zero allowed → harmless no-op). No crash/durable
+  state.
+- **Corrected certificate**: `Inv = WF ∧ InFlightNonneg ∧ Bound`, with
+  `A = Σspent + Σescrow + InFlight`, `Bound = A ≤ CAP`. `certificate_implies_safety` is proved
+  **over ℤ** so all three hypotheses are load-bearing; `InFlightNonneg` is the hidden assumption
+  the hostile review surfaced (finding #1).
+- **Headline theorem** `Escrow.reachable_safe`: every state reachable from genesis satisfies
+  `Σspent ≤ CAP`, for any `rs.Nodup`, genesis `g ∈ rs`, any `ts.Nodup`, any amounts, any `CAP`
+  **including 0**. Proof: `A_preserved` (every transition conserves `A`) ⇒ `Bound` inductive ⇒
+  Safety. **Axioms: `[propext, Quot.sound]` only — no `sorry`, no `Classical.choice`, no custom
+  axioms** (audited by `make lean`).
+- **Negative controls preserved as theorems** (`Escrow/Negative.lean`):
+  `inflight_nonneg_is_necessary` (over ℤ, `WF ∧ Bound → Safety` is false without `InFlightNonneg`);
+  `restore_breaks_bound` (the current-only invariant is not inductive under unconstrained crash
+  restoration — finding #2). Both are true existentials, not `Fail`-encoded falsehoods.
+- **Theorem-sensitivity**: four controlled mutations each break the proof — removing the
+  no-overspend guard, allowing receiver double-credit, omitting `InFlightNonneg`, and sending
+  without debiting (checked out-of-band; mutations reverted).
+
+**Evidence alignment (do not conflate):**
+
+| Property | Highest evidence |
+|---|---|
+| Crash-FREE safety, all finite N, all amounts, all CAP | **MACHINE-PROVED** (Lean, `reachable_safe`) |
+| Crash/recovery safety | **model-checked** (TLC, Floor D) + **property-tested** (Floor E) — **NOT machine-proved** |
+| `WF ∧ InFlightNonneg ∧ Bound ⇒ Safety` | **MACHINE-PROVED** (`certificate_implies_safety`) |
+
+No machine-checked crash theorem is claimed. TLC and PBT results remain bounded/tested evidence,
+never described as proof.
+
+## Floor F2 (planned, NOT started)
+
+Extending the machine proof to crash/recovery will require an invariant strictly stronger than the
+current-only certificate: current-state `WF`/`Bound` **and** durable-state `WF`/`Bound`, a relation
+between current and durable transfer/dedup state, write-ahead constraints, and preservation under
+`Persist` and `Crash`. `restore_breaks_bound` is the recorded reason. Not begun.
+
 ## Trusted base (so far)
 
-The Rocq/Lean kernels (Floor F, later); TLC and the TLA+ semantics for the bounded checks; the
-pinned TLA+ Tools **v1.7.4** verified by committed SHA-256. TLC results are bounded evidence,
-not a proof for all N.
+The Lean kernel (Floor F1 headline theorems reduce to `[propext, Quot.sound]`); TLC and the TLA+
+semantics for the bounded checks; the pinned TLA+ Tools **v1.7.4** verified by committed SHA-256.
+TLC/PBT results are bounded/tested evidence, not a proof for all N.

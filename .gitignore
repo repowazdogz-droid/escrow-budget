@@ -7,3 +7,7 @@ spec/states/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Lean build artifacts
+lean/.lake/
+lean/.axioms.txt
