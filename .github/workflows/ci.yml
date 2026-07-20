@@ -1,0 +1,54 @@
+name: ci
+
+# Clean-checkout verification of escrow-budget.
+#
+# The MACHINE-CHECKED result is the Lean job: it builds the proofs (including the
+# proved negative controls), scans for sorry/admit/native_decide/axiom, and audits
+# that the headline theorems depend only on [propext, Quot.sound]. That job is the
+# assurance gate.
+#
+# The Python model is a SEPARATE, non-authoritative job (executable model + property
+# tests + mutation check). It is not the theorem and does not stand in for it: there
+# is no machine-checked refinement between the Lean theorem, the TLA+ specs, and the
+# Python model. TLA+/TLC is intentionally NOT run here (it needs a JDK + a pinned
+# tla2tools.jar); run it locally with `make tlc`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lean:
+    name: Lean proof + axiom audit (assurance gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lean toolchain (pinned by lean/lean-toolchain = v4.32.0)
+        uses: leanprover/lean-action@v1
+        with:
+          lake-package-directory: lean
+          build: false
+      - name: make lean (placeholder scan + build + axiom audit)
+        run: make lean
+
+  model:
+    name: Python executable model (non-authoritative)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test deps
+        run: pip install "hypothesis>=6.100"
+      - name: Property tests + mutation check (model, not proof)
+        run: |
+          python3 impl/test_escrow.py
+          python3 impl/test_durable.py
+          python3 impl/test_distributed.py
+          python3 impl/mutation_check.py

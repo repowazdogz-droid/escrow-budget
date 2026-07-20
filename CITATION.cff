@@ -1,0 +1,25 @@
+cff-version: 1.2.0
+message: "If you use escrow-budget in your work, please cite it as below."
+title: "escrow-budget: a formally verified aggregate-budget bound under distributed faults"
+abstract: >-
+  A machine-checked proof (Lean 4) that a distributed budget protocol keeps
+  aggregate authorised spend within a global cap under message loss and disciplined
+  crash/recovery, for arbitrary finite replica and transfer sets. Proved negative
+  controls show each discipline hypothesis is necessary. TLA+ specifications and a
+  Python property-testing model accompany the proof as separate, non-authoritative
+  checks; there is no machine-checked refinement across the three layers.
+type: software
+authors:
+  - family-names: Smith
+    given-names: Warren
+repository-code: "https://github.com/repowazdogz-droid/escrow-budget"
+url: "https://github.com/repowazdogz-droid/escrow-budget"
+license: MIT
+keywords:
+  - formal-verification
+  - lean4
+  - tla-plus
+  - distributed-systems
+  - crash-recovery
+  - property-based-testing
+  - ai-safety
