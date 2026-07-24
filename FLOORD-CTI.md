@@ -2,9 +2,16 @@
 
 **Outcome: CLOSED at iteration 7.** `CertD` is inductive at the fixed constants of
 `EscrowBudgetD.cfg`; base, step, and `CertD => SafetyLe` are all discharged, so `SafetyLe`
-holds at **unbounded depth** for that instance. Nine auxiliary conjuncts are needed
-(`CertDMinimal`); the as-iterated `CertD` carries a tenth, `DurableRecvdSub`, which was
-step-checked to be redundant given `dRecvdEqRecvd`.
+holds at **unbounded depth** for that instance. The certified form (`CertDMinimal`) carries
+nine auxiliary conjuncts; the as-iterated `CertD` carries a tenth, `DurableRecvdSub`, which
+was step-checked to be redundant given `dRecvdEqRecvd`.
+
+> **Minimality (added 2026-07-24).** Neither form is minimal. Greedy minimisation — dropping
+> conjuncts one at a time and re-checking until no single further drop closes — reduces the
+> certificate to **five**: `dRecvdAddressed`, `TidUnique`, `DurableEscrowGe`, `LagOrder`,
+> `dRecvdEqRecvd`. The nine-conjunct form is what the CTI loop accumulated and is what is
+> certified; the five-conjunct figure is the one to use when comparing against other specs.
+> See [`METHOD-NOTE.md`](METHOD-NOTE.md), which was revised after this was measured.
 
 > **History.** Iterations 1–6 were run in a previous session and stopped at a 6-iteration
 > budget with the candidate still open; this document then read "STALLED, not closed". The

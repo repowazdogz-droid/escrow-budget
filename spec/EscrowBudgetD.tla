@@ -125,16 +125,20 @@ Conserved == SumSpent + SumEscrow + InFlight =  CAP
  * SafetyLe is TRUE on all 56 reachable states of EscrowBudgetD.cfg but is NOT INDUCTIVE on
  * its own. Closing it took SEVEN counterexample-to-induction rounds and NINE auxiliary
  * conjuncts; the full CTI sequence, each pre-state verbatim, and each reachability argument
- * are in FLOORD-CTI.md. For contrast, Floor A and Recovery each closed with ONE conjunct.
+ * are in FLOORD-CTI.md. For contrast, minimised: Recovery needs 1, Floor A needs 2.
  * (Iteration produced ten conjuncts; DurableRecvdSub was then step-checked to be redundant
  * given dRecvdEqRecvd, leaving nine in CertDMinimal. Both forms are certified.)
  *
- * The reason Floor D is hard: its durable state is never a coherent snapshot of a past
- * state. Recv writes dEscrow eagerly (to the value escrow is simultaneously taking) but
- * never writes dSpent; Charge writes neither; Persist writes all three; Crash reads all
- * three. So the durable triple (dEscrow, dSpent, dRecvd) mixes components captured at
- * different moments, and the certificate has to pin the exact relationship between six
- * variables rather than name one conserved quantity.
+ * Why Floor D is hard. Crash installs the whole durable triple over the current state in
+ * one step, so the certificate must pin every durable component against its current
+ * counterpart. A contributing factor is that the durable triple is not a coherent snapshot
+ * (Recv writes dEscrow eagerly but never dSpent; Charge writes neither; Persist writes all
+ * three) -- but that factor was TESTED and is minor: a scratch variant with fully coherent
+ * durable writes still needs 4 of the 5 minimal conjuncts. See METHOD-NOTE.md.
+ *
+ * NOTE ON COUNTS: the 9 conjuncts below are what the CTI loop accumulated, not a minimal
+ * set. Greedy minimisation reduces the certificate to 5. The 9-conjunct form is what is
+ * certified here and is kept as the record of the iteration; both close.
  *
  * The nine conjuncts, grouped:
  *   well-formedness   RecvdOnlyAddressed, dRecvdAddressed, TidUnique, AmtOfSentOnly
