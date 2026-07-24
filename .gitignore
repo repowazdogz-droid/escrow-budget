@@ -2,6 +2,8 @@
 tools/tla2tools.jar
 # TLC state dumps
 spec/states/
+# Apalache run output (counterexamples, SMT logs, per-run directories)
+_apalache-out/
 
 # Python bytecode
 __pycache__/

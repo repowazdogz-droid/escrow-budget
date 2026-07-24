@@ -1,5 +1,5 @@
 # escrow-budget — Floor A/B/C/D/E + theory-checkpoint + Floor F1 (Lean) verification targets.
-.PHONY: tlc tlc-adversarial tlc-c tlc-d theory impl impl-c impl-d impl-theory impl-e stress lean check clean
+.PHONY: tlc tlc-adversarial tlc-c tlc-d theory apalache-inductive impl impl-c impl-d impl-theory impl-e stress lean check clean
 LEANPATH := $(HOME)/.elan/bin
 
 ## tlc: bounded model-check the CORRECT escrow protocol; invariants must hold.
@@ -41,6 +41,13 @@ impl-d:
 ## theory: checkpoint — Safety vs Non-creation vs Conservation are distinct (model-checked).
 theory:
 	@bash scripts/theory-matrix.sh
+
+## apalache-inductive: certify the inductive certificates with Apalache (symbolic/SMT).
+## NOT part of `make check` — Apalache is up to 200x slower than TLC on these specs and is a
+## manual, occasional check. TLC proves invariants TRUE on reachable states; only Apalache can
+## show they are INDUCTIVE. Requires Apalache + a JDK; exits 2 if absent.
+apalache-inductive:
+	@bash scripts/apalache-inductive.sh
 
 ## impl-theory: checkpoint — executable safety cert under safe recovery + the four distinctions.
 impl-theory:
