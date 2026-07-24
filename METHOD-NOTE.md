@@ -1,35 +1,76 @@
-# Inductive-invariant difficulty tracks coupled state components, not state-space size
+# State-space size does not predict inductive-invariant difficulty. Nothing else here does either.
 
-**Status: revised 2026-07-24 after a falsification test. The original version of this note
-overstated its case in two ways; both corrections are recorded below rather than quietly
-edited out.** The surviving claim is weaker and more specific than the one first published.
+**Status: revised twice on 2026-07-24.** The original claim was corrected once after an
+in-artefact falsification test, and its replacement was then refuted outright by a
+pre-registered test against an outside spec ([`PREDICTION.md`](PREDICTION.md)). What is left
+is a negative result and a counting rule. Both revisions are recorded rather than edited out.
 
 ## What survives
 
-Across four TLA+ models in this artefact, the number of conjuncts an inductive invariant
-needs had **no relationship to state-space size**. The largest state space needed the
-second-fewest conjuncts; the smallest needed the most.
+Across five TLA+ models — four in this artefact and one outside it — the number of conjuncts
+an inductive invariant needs has **no relationship to state-space size**. Two specs with
+near-identical state spaces (257 and 288 reachable states) differ 3.5× in conjuncts.
 
-What it tracked instead: **how many independent state components a single action can install
-wholesale.** Crash/recovery models have a durable copy that `Crash` installs over the current
-state in one step, so the certificate must relate every durable component to its current
-counterpart — regardless of how coherently those components were written.
+**No positive mechanism survives.** Two were proposed and both are refuted:
+
+| # | proposed mechanism | refuted by |
+|---|---|---|
+| 1 | difficulty tracks a nameable **conserved quantity** | the atomic-write variant *has* one and still needs 4 |
+| 2 | difficulty tracks components a single action **installs wholesale** | TwoPhase has **none** and needs 7 — more than Floor D, which has one |
+
+Refutation 2 was a **pre-registered** prediction: band 2–4, discriminating prediction "fewer
+than Floor D's 5", committed and tagged before the answer was read. The answer was 7. See
+[`PREDICTION.md`](PREDICTION.md) for the frozen prediction and the scoring.
+
+The honest position is that I cannot predict conjunct count from spec structure. A third
+mechanism would have to be pre-registered against an unexamined spec before it means
+anything, and no such mechanism is offered here.
+
+## The conjunct-counting rule
+
+`LagEq` showed the metric is granularity-sensitive — one equality did the work of two
+inequalities — so the number means nothing until the splitting convention is fixed. This rule
+was fixed in advance of the TwoPhase test, not chosen after seeing results:
+
+1. Start from the certificate conjoined with the property being certified.
+2. Discard the type-correctness conjunct and the property itself. What remains are the
+   **auxiliary** conjuncts — those are what get counted.
+3. **Greedy-minimise**: drop one auxiliary conjunct, re-check every obligation, keep the drop
+   if it still closes; repeat until no single further drop closes. Report the locally minimal
+   set, not the set as written.
+4. **COARSE count** = top-level conjuncts of that minimal set, flattening `/\` but **not**
+   descending under `\A`, `\E`, or `=>`.
+5. **FINE count** = same, after maximally distributing `\A` over `/\`.
+
+Report both. COARSE is the headline; FINE bounds how much of the number is phrasing. If they
+disagree by more than about 2×, the measurement did not discriminate and no comparison should
+be drawn from it. On TwoPhase they agreed exactly (7 and 7), so that result stands.
+
+Two consequences worth stating separately, because ignoring either inflates comparisons:
+
+- **Step 3 is not optional.** Every certificate examined was non-minimal as written — Floor D
+  9 → 5, TwoPhase's published invariant 9 → 7. The first version of this note compared an
+  unminimised count against minimised ones and reported a 9× effect that was really ~2.5×.
+- **Obligations, plural.** "Closes" means base (`Init => Inv`), step (`Inv /\ Next => Inv'`)
+  **and** implication (`Inv => property`). Dropping the third lets a candidate pass by being
+  strong on preservation and useless for the goal.
 
 ## Evidence
 
-All counts are **greedy-minimised**: conjuncts were dropped one at a time and the certificate
-re-checked, repeating until no single further drop preserved closure. Counts are auxiliary
-predicates beyond `TypeOK /\ <the property being certified>`.
+All counts greedy-minimised under the rule above.
 
-| spec | reachable states | property | minimal conjuncts | crash/recovery? |
+| spec | source | reachable states | minimal conjuncts | wholesale-replacing action? |
 |---|---|---|---|---|
-| `Recovery` | 35 | `Bound` | **1** (`ConservedTotal`) | no |
-| `EscrowBudget` (Floor A) | 257 | `Safety` | **2** (`Conserved`, `NetTidsSent`) | no |
-| `EscrowBudgetD` (Floor D) | 56 | `SafetyLe` | **5** | yes |
-| `EscrowBudgetD` atomic-write variant | 41 | `SafetyLe` | **4** | yes |
+| `Recovery` | this artefact | 35 | **1** | no |
+| `EscrowBudget` (Floor A) | this artefact | 257 | **2** | no |
+| `TwoPhase` (3 RMs) | tlaplus/Examples | **288** | **7** | **no** |
+| `EscrowBudgetD` (Floor D) | this artefact | 56 | **5** | yes |
+| `EscrowBudgetD` atomic-write | scratch variant | 41 | **4** | yes |
 
-Floor A has **4.6×** Floor D's state space and needs fewer than half the conjuncts. That is
-the observation, and it is the part that held up.
+The two rows that matter: **Floor A and TwoPhase have near-identical state spaces (257 vs 288)
+and differ 3.5× in conjuncts** — so size predicts nothing, now confirmed on a spec from outside
+this artefact. And **TwoPhase, with no wholesale-replacing action, needs more than Floor D,
+which has one** — so the mechanism proposed in the previous revision is wrong.
 
 ## Correction 1 — the original magnitude was inflated
 
@@ -97,27 +138,43 @@ the durable triple wholesale, so the certificate must pin every durable componen
 current counterpart. Write coherence changes how many predicates that pinning takes; it does
 not remove the need for it.
 
-## The revised diagnostic, before you start
+## Correction 3 — the replacement diagnostic failed its first outside test
 
-Ask, in order:
+Correction 2 proposed a diagnostic: *"can a single action replace several state components at
+once? If yes, expect that to dominate."* It was pre-registered against Gray & Lamport's
+two-phase commit and **scored wrong**. TwoPhase has no such action anywhere and needs **7**
+conjuncts — more than Floor D, which has one and needs 5. Predicted band was 2–4. Full
+pre-registration and scoring: [`PREDICTION.md`](PREDICTION.md), tag `prediction-twophase`.
 
-1. **Can a single action replace several state components at once with values from elsewhere?**
-   Crash-restores-from-durable, snapshot-restore, cache-invalidate, leader-handoff, rollback.
-   If yes, expect the certificate to carry roughly one conjunct per component pair that action
-   relates, and expect that to dominate everything else. This is the one that predicted well.
-2. **Is there a single equation over the state variables that every action preserves?** If yes
-   it will be the backbone of the certificate — but it is not sufficient on its own, and it does
-   not by itself get you to one or two conjuncts.
-3. **Do not use state-space size as a proxy for difficulty.** On this evidence it carries no
-   signal at all, and it points the wrong way as often as not.
+The diagnostic is withdrawn. It is not restated here in weakened form, because a heuristic
+that predicted the wrong ordering on its only out-of-sample test has no demonstrated
+predictive content at all.
 
-The split-write question from the original note is worth asking, but demote it: expect it to
-cost about one conjunct, not to be the deciding factor.
+## What to actually do, given no diagnostic works
+
+1. **Do not use state-space size as a proxy for difficulty.** This is the one thing the
+   evidence supports, and it is supported out-of-sample: 257 states → 2 conjuncts, 288 states
+   → 7.
+2. **Do not budget from spec structure.** Five specs, two mechanisms, both refuted. Run the CTI
+   loop and find out; it is cheap (1–2 s per obligation) compared with the time spent theorising
+   about how many rounds it ought to take.
+3. **Minimise before comparing anything.** Every certificate examined was non-minimal as
+   written. Comparisons of as-written counts are meaningless.
+
+A post-hoc reading of TwoPhase — that its cost comes from relating a monotone message history
+to two state variables, roughly one conjunct per "what does this message imply about state"
+fact — is available and plausible. It is deliberately **not** promoted to a diagnostic: it was
+invented after seeing the answer, which is exactly how the two refuted mechanisms were
+produced. It would need pre-registering against an unexamined spec to earn any credit.
 
 ## Scope and limits
 
-- **n = 4 models, one artefact, one author, one protocol family.** Shared lineage, not an
-  independent sample. Three of the four are variants of the same escrow-budget protocol.
+- **n = 5 models**, of which four are one artefact, one author, one protocol family. Only
+  `TwoPhase` is genuinely external. A single out-of-sample point refuted the diagnostic; it
+  cannot establish a replacement.
+- **One target was burned before use.** `Voting.tla` was disqualified as a prediction target
+  because a `grep` printed its one-line `Inv` in full before any prediction was made. Recorded
+  in `PREDICTION.md` rather than dropped.
 - **Only one intervention was run.** The atomic-write variant is a single manipulation testing
   a single mechanism. It changes the protocol (`Recv` and `SendXfer` become full checkpoints),
   so "4 vs 5" compares two related protocols, not one protocol under two representations. A
@@ -137,10 +194,11 @@ cost about one conjunct, not to be the deciding factor.
 - **Says nothing about** proof assistants, unbounded-N verification, liveness, or models whose
   hardness comes from arithmetic or data structures.
 
-What would move this from observation to something firmer: run the ghost-variable version to
-separate representation from protocol; then apply the revised diagnostic to a crash/recovery
-spec from outside this artefact, record the predicted conjunct count *before* running the CTI
-loop, and score it.
+What would move this forward: more out-of-sample points, each pre-registered. The procedure
+now exists and works — freeze the claim, write the prediction, commit and tag it, then look.
+It cost one afternoon and it converted a confident-sounding mechanism into a scored miss,
+which is the only reason anything in this note can be trusted. The mechanism that would
+actually predict conjunct count remains unknown, and this note no longer claims otherwise.
 
 ## Provenance
 
