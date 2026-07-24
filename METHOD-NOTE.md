@@ -1,124 +1,152 @@
-# Inductive-invariant difficulty tracks a nameable conserved quantity, not state-space size
+# Inductive-invariant difficulty tracks coupled state components, not state-space size
 
-**The observation.** Across the three specs in this artefact, how hard it was to find an
-inductive invariant had no relationship to how large the state space was. It tracked one thing:
-whether the model had a **conserved quantity that could be named as a single equation**. Where
-one existed, the induction closed with a single extra conjunct. Where none existed, it took
-seven rounds and nine conjuncts — on the *smallest* state space of the three.
+**Status: revised 2026-07-24 after a falsification test. The original version of this note
+overstated its case in two ways; both corrections are recorded below rather than quietly
+edited out.** The surviving claim is weaker and more specific than the one first published.
 
-This is an observation from three specs in one artefact, not a law. See *Scope and limits*.
+## What survives
+
+Across four TLA+ models in this artefact, the number of conjuncts an inductive invariant
+needs had **no relationship to state-space size**. The largest state space needed the
+second-fewest conjuncts; the smallest needed the most.
+
+What it tracked instead: **how many independent state components a single action can install
+wholesale.** Crash/recovery models have a durable copy that `Crash` installs over the current
+state in one step, so the certificate must relate every durable component to its current
+counterpart — regardless of how coherently those components were written.
 
 ## Evidence
 
-| spec | reachable states | conserved quantity | conjuncts to close | CTI rounds |
+All counts are **greedy-minimised**: conjuncts were dropped one at a time and the certificate
+re-checked, repeating until no single further drop preserved closure. Counts are auxiliary
+predicates beyond `TypeOK /\ <the property being certified>`.
+
+| spec | reachable states | property | minimal conjuncts | crash/recovery? |
 |---|---|---|---|---|
-| `EscrowBudget` (Floor A) | **257** | `SumSpent + SumEscrow + InFlight = CAP` | **1** (`NetTidsSent`) | 1 |
-| `Recovery` | **35** | `A + stranded = CAP` | **1** (`ConservedTotal`) | 1 |
-| `EscrowBudgetD` (Floor D) | **56** | none nameable | **9** † | 7 |
+| `Recovery` | 35 | `Bound` | **1** (`ConservedTotal`) | no |
+| `EscrowBudget` (Floor A) | 257 | `Safety` | **2** (`Conserved`, `NetTidsSent`) | no |
+| `EscrowBudgetD` (Floor D) | 56 | `SafetyLe` | **5** | yes |
+| `EscrowBudgetD` atomic-write variant | 41 | `SafetyLe` | **4** | yes |
 
-State counts are TLC's distinct-state counts at each spec's shipped `.cfg`. Conjunct counts are
-the auxiliary predicates added beyond `TypeOK /\ <property>`.
+Floor A has **4.6×** Floor D's state space and needs fewer than half the conjuncts. That is
+the observation, and it is the part that held up.
 
-† Iteration produced ten; one (`DurableRecvdSub`) was step-checked to be redundant given
-`dRecvdEqRecvd`, so the minimal certificate needs nine. Both forms are certified by
-`make apalache-inductive`.
+## Correction 1 — the original magnitude was inflated
 
-Floor D has **less than a quarter** of Floor A's state space and took **nine times** the
-conjuncts. If state-space size predicted difficulty, this table would be sorted the other way.
+The first version of this note reported "9 vs 1" and said Floor D took "nine times the
+conjuncts". Both numbers were wrong, for two separate reasons:
 
-## Mechanism: why Floor D has no conserved quantity to name
+- **Floor D's 9 was never minimised.** It was whatever the CTI loop happened to accumulate.
+  Greedy minimisation brings it to **5**; four of the nine are individually droppable and
+  `DurableSafetyLe`, `DurableSpentLe`, `RecvdOnlyAddressed` and `AmtOfSentOnly` all fall out.
+- **The baselines were inconsistent.** Floor A was counted as "1" by treating `Conserved` as
+  the starting point rather than as part of the certificate. Counted the same way as the
+  others — auxiliary predicates beyond `TypeOK /\ <property>` — it is **2**.
 
-Floors A and Recovery each have a single quantity that every action leaves invariant. In
-Floor A, `Charge` moves a unit escrow→spent, `SendXfer` moves it escrow→in-flight, `Recv` moves
-it in-flight→escrow; the three-term sum never changes. In Recovery, `Lose` moves authority
-escrow→stranded and a guarded `Reclaim` moves it back; `A + stranded` never changes. In both
-cases the invariant is the conservation equation plus one well-formedness fact, and that is the
-whole certificate.
+The corrected ratio is roughly 2.5–5×, not 9×. The ordering survives; the magnitude does not.
+Comparing an unminimised certificate against minimised ones is not a measurement, and the
+original table did exactly that.
 
-Floor D has no such quantity because **its durable state is never a coherent snapshot of any
-past state**. Different actions write different components of the durable triple
-`(dEscrow, dSpent, dRecvd)` at different moments:
+## Correction 2 — "no nameable conserved quantity" was the wrong mechanism
 
-| action | `dEscrow` | `dSpent` | `dRecvd` |
-|---|---|---|---|
-| `Charge(r, a)` | — | — | — |
-| `SendXfer(i, j, t, a)` | written, to `escrow[i] - a` (iff `DebitDurableBeforeSend`) | — | — |
-| `Recv(m)` | written, to `escrow[m.to] + amtOf[m.tid]` | — | written (iff `RecvdDurable`) |
-| `Persist(r)` | written, to `escrow[r]` | written, to `spent[r]` | written, to `recvd[r]` |
-| `Crash(r)` | — (read: restores `escrow[r]`) | — (read: restores `spent[r]`) | — (read: restores `recvd[r]`) |
+The original note asserted that Floor D is hard because **its durable state is never a
+coherent snapshot of any past state**: `Charge` writes nothing durable, `Recv` writes
+`dEscrow` eagerly but never `dSpent`, so the durable triple mixes components captured at
+different moments. The diagnostic built on this told readers to look for a *split-write
+pattern*.
 
-Read the `Charge` and `Recv` rows together and the problem is visible. `Charge` moves budget
-from `escrow` to `spent` and writes **nothing** durable, so after a charge the durable copy is
-stale in two directions at once: `dEscrow[r]` is too high and `dSpent[r]` is too low. `Recv`
-then writes `dEscrow` eagerly — bringing the escrow component up to date — while leaving
-`dSpent` stale. So the durable triple mixes one component captured *now* with another captured
-at some arbitrary earlier point.
+**That was tested directly and it does not carry the weight it was given.** A variant was
+built (`EscrowBudgetDAtomic`, scratch only — never shipped) in which `Recv` and `SendXfer`
+write the whole durable triple coherently, so the durable state is *always* a coherent
+snapshot. The CTI loop was re-run from `TypeOK /\ SafetyLe`.
 
-`Crash(r)` reads all three together and installs them as current state. That is the action the
-induction must survive, and it is why no single equation suffices: the certificate has to
-constrain how far each durable component may lag *relative to the others*, per replica. That is
-what the nine conjuncts do — four rule out malformed records, one bounds the durable budget,
-three bound the per-replica lag (`DurableSpentLe`, `DurableEscrowGe`, `LagOrder`), and one
-forces the durable dedup set to stay in lockstep (`dRecvdEqRecvd`).
+Result: the minimal certificate went from **5 conjuncts to 4**. One conjunct.
 
-The CTIs got progressively subtler in exactly the way this predicts. CTI-1 was an obviously
-malformed state (a tid credited at a replica it was never sent to). CTI-5 was two replicas
-lagging in *opposite* directions such that `Persist` on one double-counts against the staleness
-of the other — a state where every predicate found so far held, both the current and durable
-sums equalled CAP exactly, and it was still unreachable.
+The predicted effect *did* occur, and exactly where predicted — the two lag inequalities
 
-## The diagnostic, before you start
+```tla
+DurableEscrowGe == \A r \in Replicas : dEscrow[r] >= escrow[r]
+LagOrder        == \A r \in Replicas : dEscrow[r] + dSpent[r] =< escrow[r] + spent[r]
+```
 
-Before beginning CTI iteration on a spec, ask:
+collapse into the single per-replica equality
 
-> **Is there a single equation, over the state variables, that every action preserves?**
+```tla
+LagEq == \A r \in Replicas : dEscrow[r] + dSpent[r] = escrow[r] + spent[r]
+```
 
-Work through the actions one at a time and ask what each does to a candidate sum. If you can
-write that equation, expect to close in one or two rounds: the certificate is the equation plus
-whatever well-formedness facts the guards rely on but do not state. Budget accordingly.
+So the split-write mechanism is **real but minor**: it accounts for one conjunct out of five.
+It is not why Floor D is hard.
 
-If you cannot write it, look for the specific reason — and the most common one is a
-**split-write pattern**: two or more variables that jointly represent one logical fact, written
-by *different* actions at *different* times. Durable-vs-volatile pairs are the obvious case;
-so are cache-vs-source, replica-vs-leader, and index-vs-collection. When you see that pattern,
-expect a per-component lag invariant rather than a conservation law, expect the conjunct count
-to scale with the number of split components rather than with the state space, and expect the
-late CTIs to be states where every individual component looks fine.
+**The sharper refutation:** the atomic variant *has* a nameable conserved quantity — `LagEq`
+is a clean per-replica conservation equality, exactly the kind of thing the original note said
+Floor D lacked. And it still needs **4** conjuncts, against Recovery's 1. So "has a nameable
+conserved quantity ⇒ closes in about one conjunct" is false. Having the quantity is not
+sufficient.
 
-A practical corollary: the cheap screen is to write down the candidate equation *before*
-running anything. It costs minutes and it tells you which of the two regimes you are in.
+Both minimal Floor D certificates need the same three things, coherent writes or not:
+
+```tla
+TidUnique       \* at most one in-flight message per transfer id
+dRecvdEqRecvd   \* the durable dedup set tracks the current one
+dRecvdAddressed \* a durable credit record implies a matching sent message
+```
+
+plus one lag predicate. Those are about **crash/recovery existing at all** — `Crash` installs
+the durable triple wholesale, so the certificate must pin every durable component against its
+current counterpart. Write coherence changes how many predicates that pinning takes; it does
+not remove the need for it.
+
+## The revised diagnostic, before you start
+
+Ask, in order:
+
+1. **Can a single action replace several state components at once with values from elsewhere?**
+   Crash-restores-from-durable, snapshot-restore, cache-invalidate, leader-handoff, rollback.
+   If yes, expect the certificate to carry roughly one conjunct per component pair that action
+   relates, and expect that to dominate everything else. This is the one that predicted well.
+2. **Is there a single equation over the state variables that every action preserves?** If yes
+   it will be the backbone of the certificate — but it is not sufficient on its own, and it does
+   not by itself get you to one or two conjuncts.
+3. **Do not use state-space size as a proxy for difficulty.** On this evidence it carries no
+   signal at all, and it points the wrong way as often as not.
+
+The split-write question from the original note is worth asking, but demote it: expect it to
+cost about one conjunct, not to be the deciding factor.
 
 ## Scope and limits
 
-- **n = 3.** Three specs, one artefact, one author, all modelling variants of the same
-  escrow-budget protocol. That is a shared-lineage sample, not an independent one — the three
-  are not three draws from "distributed protocols".
-- **The comparison is not controlled.** Floor D differs from Floor A in more than the presence
-  of a conserved quantity: it has eight state variables to Floor A's six, adds crash and
-  persist actions, and carries two boolean configuration constants. The mechanism above
-  argues the split-write pattern is what did the damage, but this evidence cannot separate it
-  from "Floor D is simply a more complex model".
-- **Conjunct count is a proxy, and a soft one.** Iteration produced ten and one proved
-  redundant on inspection; a sharper invariant might use fewer still, and nobody searched for
-  the minimum. Round count is likewise sensitive to how well each CTI was diagnosed, which is a
-  property of the person doing it, not only of the spec. Treat "9 vs 1" as an order-of-magnitude
-  contrast, not a measurement.
-- **All state counts are at fixed constants.** They would change with the constants, and so
-  might the difficulty ordering.
-- **Says nothing about** proof assistants, unbounded-N verification, liveness, or specs whose
-  hardness comes from arithmetic or data structures rather than from split writes. The one
-  case here where a conserved quantity existed but the spec was still awkward — Recovery's
-  `Bound`, documented as inductive when it was not — failed for a different reason: the
-  quantity was named but the *wrong* one was chosen.
+- **n = 4 models, one artefact, one author, one protocol family.** Shared lineage, not an
+  independent sample. Three of the four are variants of the same escrow-budget protocol.
+- **Only one intervention was run.** The atomic-write variant is a single manipulation testing
+  a single mechanism. It changes the protocol (`Recv` and `SendXfer` become full checkpoints),
+  so "4 vs 5" compares two related protocols, not one protocol under two representations. A
+  purely representational test — ghost variables that leave the transition relation on the
+  original variables untouched — was **not** run, and would be the cleaner experiment. Its
+  known hazard is that a sufficiently informative ghost closes any invariant trivially, so it
+  needs a naturalness criterion decided in advance.
+- **"Locally minimal" is not "minimal".** Greedy single-drop minimisation finds a set where no
+  *one* further conjunct can go. It does not find the globally smallest set, and it does not
+  explore different starting certificates that might close with fewer. Single-drop redundancy
+  also does not compose: on the atomic variant three conjuncts were each individually
+  droppable, but dropping all three together does **not** close.
+- **Conjunct count is a coarse proxy for difficulty,** and it is sensitive to how each predicate
+  was phrased. `LagEq` does the work of two inequalities; someone who wrote the inequalities
+  more cleverly might have needed fewer from the start.
+- **All counts are at fixed constants** and would change with them.
+- **Says nothing about** proof assistants, unbounded-N verification, liveness, or models whose
+  hardness comes from arithmetic or data structures.
 
-What would move this from observation to something firmer: apply the diagnostic *before*
-starting on a spec nobody in this artefact wrote, record the prediction, then run the CTI loop
-and score it. That is a prediction with a date attached, which is the only version of this
-claim worth more than the anecdote above.
+What would move this from observation to something firmer: run the ghost-variable version to
+separate representation from protocol; then apply the revised diagnostic to a crash/recovery
+spec from outside this artefact, record the predicted conjunct count *before* running the CTI
+loop, and score it.
 
 ## Provenance
 
-Derived from the work recorded in [`FLOORD-CTI.md`](FLOORD-CTI.md) (Floor D, 7 CTI rounds) and
-the certificates in `spec/EscrowBudget.tla` and `spec/Recovery.tla`. All inductiveness results
-produced with Apalache 0.58.3 via `scripts/apalache-inductive.sh`; all state counts with TLC
-2.19. Decision to adopt Apalache for inductiveness checking only: `D166`.
+Certificates and CTI sequence: [`FLOORD-CTI.md`](FLOORD-CTI.md), `spec/EscrowBudget.tla`,
+`spec/Recovery.tla`, `spec/EscrowBudgetD.tla`. Inductiveness results from Apalache 0.58.3 via
+`scripts/apalache-inductive.sh` (which asserts on Apalache's init-predicate log line, not its
+exit code); state counts from TLC 2.19. The falsification test and all minimisation runs were
+done in a scratch tree; `EscrowBudgetDAtomic` is **not** part of the artefact and is not
+shipped. Apalache adoption decision: `D166`.
