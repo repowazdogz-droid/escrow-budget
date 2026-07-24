@@ -1,14 +1,23 @@
 # Floor D — closing the inductive invariant by CTI iteration
 
-**Outcome: STALLED, not closed.** Six iterations spent, `SafetyLe` not yet inductive for
-Floor D. This document is the deliverable: the full counterexample-to-induction sequence, the
-auxiliary predicates derived from it, and the exact state the work stopped in.
+**Outcome: CLOSED at iteration 7.** `CertD` is inductive at the fixed constants of
+`EscrowBudgetD.cfg`; base, step, and `CertD => SafetyLe` are all discharged, so `SafetyLe`
+holds at **unbounded depth** for that instance. Nine auxiliary conjuncts are needed
+(`CertDMinimal`); the as-iterated `CertD` carries a tenth, `DurableRecvdSub`, which was
+step-checked to be redundant given `dRecvdEqRecvd`.
+
+> **History.** Iterations 1–6 were run in a previous session and stopped at a 6-iteration
+> budget with the candidate still open; this document then read "STALLED, not closed". The
+> predicate diagnosed from CTI-6 but left unchecked at that point — `dRecvdEqRecvd` — was
+> subsequently step-checked and closed the induction. The stall record is kept below rather
+> than rewritten, because the CTI sequence is the useful artefact and the stall was a real
+> state of the work, not an error to erase.
 
 Floor D (`spec/EscrowBudgetD.tla`) models crash / recovery / durable-vs-volatile state /
 partition / retransmission. TLC shows `Safety` and `SafetyLe` hold on all 56 reachable states
-of `EscrowBudgetD.cfg`. **Neither is inductive**, and six rounds of strengthening did not make
-them so. Nothing here says the protocol is unsafe — only that these invariants do not carry
-their own induction.
+of `EscrowBudgetD.cfg`. **Neither is inductive on its own** — that took seven rounds of
+strengthening to repair. See [`METHOD-NOTE.md`](METHOD-NOTE.md) for why Floor D, with a
+*smaller* state space than Floor A, was by far the harder of the two.
 
 ## Method
 
@@ -34,7 +43,8 @@ CONSTANTS of `EscrowBudgetD.cfg` (`Replicas = {r1, r2}`, `CAP = 2`, `Tids = {t1}
 all N. Two of the predicates below are valid *only* under those boolean constants, as noted.
 
 **Stop conditions** (from the brief): closed, OR 6 iterations without closing, OR an auxiliary
-predicate that cannot be justified as a reachable-state invariant. **Terminated on the second.**
+predicate that cannot be justified as a reachable-state invariant. The first pass terminated on
+the second condition; the follow-up pass terminated on the first.
 
 Apalache 0.58.3 · TLA+ Tools 1.7.4 (TLC 2.19) · candidates in `spec/apalache/EscrowBudgetDInd.tla`.
 
@@ -50,9 +60,10 @@ Apalache 0.58.3 · TLA+ Tools 1.7.4 (TLC 2.19) · candidates in `spec/apalache/E
 | 4 | + `DurableSafetyLe` | ok | fail | `dSpent[r] > spent[r]` |
 | 5 | + 5 durable-lag predicates | ok | fail | `Persist` double-counts across two lagging replicas |
 | 6 | + `LagOrder` | ok | fail | `dEscrow` holds a credit that `dRecvd` does not record |
+| 7 | + `dRecvdEqRecvd` = **`CertD`** | ok | **ok** | — **closed** |
 
-All six base obligations discharged; every failure was the step obligation. Runtimes were
-1.1–1.9 s throughout — the cost here is *diagnosis*, not compute.
+Every base obligation discharged; every failure through iteration 6 was the step obligation.
+Runtimes were 1.0–1.9 s throughout — the cost here is *diagnosis*, not compute.
 
 ---
 
@@ -305,59 +316,84 @@ durable total goes 2 → 3.
 Under `RecvdDurable = TRUE`, `Recv` writes `dEscrow[m.to]` and `dRecvd[m.to]` **in the same
 step**, so that divergence cannot arise.
 
-### STOP — six iterations reached without closing
+### Predicate added
 
-Per the brief, iteration is terminated here. `IndD6` is the last candidate actually checked.
+```tla
+dRecvdEqRecvd == \A r \in Replicas : dRecvd[r] = recvd[r]   \* requires RecvdDurable = TRUE
+```
+
+**Reachability.** Strictly stronger than `DurableRecvdSub`. `Init` sets both to `{}`. Under
+`RecvdDurable = TRUE`, `Recv(m)` adds `m.tid` to `recvd[m.to]` **and** `dRecvd[m.to]` in the
+same step. `Persist(r)` copies `recvd[r]` into `dRecvd[r]`; `Crash(r)` copies `dRecvd[r]` back
+into `recvd[r]`. `Charge` and `SendXfer` touch neither. So the two sets move together and are
+equal in every reachable state.
 
 ---
 
-## Where it stopped, and what to try next
+## Iteration 7 — `+ dRecvdEqRecvd` → **CLOSED**
 
-**Last checked candidate** (`spec/apalache/EscrowBudgetDInd.tla`):
+```
+  OK    EscrowBudgetDInd CertD   base   discharged   (1.1s)
+  OK    EscrowBudgetDInd CertD   step   discharged   (1.5s)
+```
+
+Guard evidence, from Apalache's own `detailed.log` rather than the runner's summary — this is
+the line that distinguishes a real step obligation from the silent-`--init` trap:
+
+```
+[main] INFO a.f.a.t.p.p.ConfigurationPassImpl -   > Set the initialization predicate to CertD
+[main] INFO a.f.a.t.p.p.ConfigurationPassImpl -   > Set the transition predicate to Next
+[main] INFO a.f.a.t.b.p.BoundedCheckerPassImpl - The outcome is: NoError
+```
+
+### The certificate
 
 ```tla
-IndD6 == TypeOK /\ SafetyLe
-      /\ RecvdOnlyAddressed /\ TidUnique
+CertD == TypeOK /\ SafetyLe
+      /\ RecvdOnlyAddressed /\ dRecvdAddressed /\ TidUnique /\ AmtOfSentOnly
       /\ DurableSafetyLe
-      /\ DurableSpentLe /\ DurableEscrowGe /\ DurableRecvdSub /\ dRecvdAddressed
-      /\ AmtOfSentOnly
-      /\ LagOrder
+      /\ DurableSpentLe /\ DurableEscrowGe /\ DurableRecvdSub /\ LagOrder
+      /\ dRecvdEqRecvd
 ```
 
-Base discharged, step fails with CTI-6 above.
+Grouped by what each conjunct does:
 
-**Diagnosed but NOT step-checked** — the honest boundary of this work:
+| group | conjuncts | excludes |
+|---|---|---|
+| well-formedness | `RecvdOnlyAddressed`, `dRecvdAddressed`, `TidUnique`, `AmtOfSentOnly` | malformed message/credit records |
+| durable budget | `DurableSafetyLe` | durable snapshot over budget |
+| durable lag | `DurableSpentLe`, `DurableEscrowGe`, `LagOrder` | current/durable divergence beyond what Charge can create |
+| durable dedup | `DurableRecvdSub`, `dRecvdEqRecvd` | a credit recorded in `dEscrow` but not in `dRecvd` |
 
-```tla
-dRecvdEqRecvd    == \A r \in Replicas : dRecvd[r] = recvd[r]   \* requires RecvdDurable = TRUE
-IndD7_UNVERIFIED == IndD6 /\ dRecvdEqRecvd
-```
+`DurableRecvdSub` is implied by `dRecvdEqRecvd`. That is not asserted — `CertDMinimal`, which
+drops it, was separately step-checked and **also discharges** (base 1.3s, step 1.4s). So the
+certificate needs **nine** auxiliary conjuncts; `CertD` retains the tenth only as the record of
+iteration 5. `make apalache-inductive` certifies both.
 
-`dRecvdEqRecvd` is TLC-verified as a reachable-state invariant on all 56 states and confirmed
-live by negation. It is strictly stronger than `DurableRecvdSub` and it does exclude CTI-6.
-**Its Apalache step obligation was not run**, so whether it closes Floor D is unknown. It may
-close, or it may produce a CTI-7. Do not record it as a certificate until the step obligation
-is discharged through `scripts/apalache-inductive.sh`.
+### Obligations discharged
 
-**Assessment.** Six iterations produced nine auxiliary predicates, all genuine reachable-state
-invariants, and the CTIs became progressively more subtle — from "obviously malformed state" in
-CTI-1 to "two replicas lagging in opposite directions" in CTI-5. The remaining difficulty is
-structural rather than incidental: Floor D's durable and current state are updated at different
-points by different actions (`Recv` writes `dEscrow` eagerly but `dSpent` never; `Persist`
-writes everything; `Crash` reads everything), so the durable snapshot is not a coherent past
-state, and an inductive invariant has to pin the exact relationship between six variables
-rather than state a single conserved quantity. Floors A and Recovery each closed with **one**
-conjunct because each had a genuine conserved quantity to name. Floor D does not obviously have
-one.
+| obligation | command | result |
+|---|---|---|
+| base | `Init => CertD`, `--length=0` | discharged (1.1s) |
+| step | `CertD /\ Next => CertD'`, `--length=1` | discharged (1.5s) |
+| implication | `CertD => SafetyLe`, `--length=0` | discharged |
 
-That is the finding, and it is a real one: the difficulty of the inductive invariant tracks
-whether the model has a conserved quantity, not the size of its state space. Floor D's state
-space (56 states) is smaller than Floor A's (257), and it is the harder of the two by a wide
-margin.
+Together these give `SafetyLe` (hence `Safety`) at **unbounded depth** for this configuration.
 
-**Caveat on the two constant-dependent predicates.** `DurableEscrowGe` requires
-`DebitDurableBeforeSend = TRUE` and `DurableRecvdSub` / `dRecvdEqRecvd` require
-`RecvdDurable = TRUE`. Under the fault configurations (`EscrowBudgetD_LazyDebit`,
-`EscrowBudgetD_VolatileRecvd`) they are false — correctly, since `SafetyLe` genuinely fails
-there. Any future certificate built on them is therefore specific to the disciplined
-configuration and must not be reused across the fault matrix.
+### Verification that the result is not vacuous
+
+- **TLC:** `CertD` holds on all 56 reachable states of `EscrowBudgetD.cfg`.
+- **Liveness of the check:** negating `CertD` makes TLC report it violated, so it is genuinely
+  evaluated rather than silently ignored.
+- **Negative controls:** `CertD`'s step obligation **fails** under `EscrowBudgetD_LazyDebit`
+  (`DebitDurableBeforeSend = FALSE`) and under `EscrowBudgetD_VolatileRecvd`
+  (`RecvdDurable = FALSE`) — as it must, since `SafetyLe` genuinely fails in both. Both run in
+  `make apalache-inductive`.
+
+### Scope
+
+Certified at the FIXED CONSTANTS of `EscrowBudgetD.cfg`: `Replicas = {r1, r2}`, `CAP = 2`,
+`Tids = {t1}`, `Amounts = {1, 2}`, `DebitDurableBeforeSend = TRUE`, `RecvdDurable = TRUE`.
+Unbounded in **depth**, fixed in **size**. **Not a proof for all N**, and not transferable to
+the fault configurations — `DurableEscrowGe` depends on `DebitDurableBeforeSend = TRUE`, and
+`DurableRecvdSub` / `dRecvdEqRecvd` on `RecvdDurable = TRUE`.

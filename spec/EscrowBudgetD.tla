@@ -120,4 +120,38 @@ TypeOK ==
 Safety    == SumSpent =< CAP
 SafetyLe  == SumSpent + SumEscrow + InFlight =< CAP
 Conserved == SumSpent + SumEscrow + InFlight =  CAP
+
+(* ----- inductive certificate -----
+ * SafetyLe is TRUE on all 56 reachable states of EscrowBudgetD.cfg but is NOT INDUCTIVE on
+ * its own. Closing it took SEVEN counterexample-to-induction rounds and NINE auxiliary
+ * conjuncts; the full CTI sequence, each pre-state verbatim, and each reachability argument
+ * are in FLOORD-CTI.md. For contrast, Floor A and Recovery each closed with ONE conjunct.
+ * (Iteration produced ten conjuncts; DurableRecvdSub was then step-checked to be redundant
+ * given dRecvdEqRecvd, leaving nine in CertDMinimal. Both forms are certified.)
+ *
+ * The reason Floor D is hard: its durable state is never a coherent snapshot of a past
+ * state. Recv writes dEscrow eagerly (to the value escrow is simultaneously taking) but
+ * never writes dSpent; Charge writes neither; Persist writes all three; Crash reads all
+ * three. So the durable triple (dEscrow, dSpent, dRecvd) mixes components captured at
+ * different moments, and the certificate has to pin the exact relationship between six
+ * variables rather than name one conserved quantity.
+ *
+ * The nine conjuncts, grouped:
+ *   well-formedness   RecvdOnlyAddressed, dRecvdAddressed, TidUnique, AmtOfSentOnly
+ *   durable budget    DurableSafetyLe
+ *   durable lag       DurableSpentLe, DurableEscrowGe, LagOrder
+ *   durable dedup     dRecvdEqRecvd
+ *
+ * SCOPE: CertDMinimal (spec/apalache/EscrowBudgetDInd.tla) is certified INDUCTIVE by
+ * Apalache at the FIXED CONSTANTS of EscrowBudgetD.cfg (Replicas = {r1, r2}, CAP = 2,
+ * Tids = {t1}, Amounts = {1, 2}, DebitDurableBeforeSend = TRUE, RecvdDurable = TRUE).
+ * Base, step, and CertDMinimal => SafetyLe are all discharged, so SafetyLe holds at
+ * UNBOUNDED DEPTH for that instance. It is NOT a proof for all N.
+ *
+ * CONFIG-SPECIFIC: DurableEscrowGe needs DebitDurableBeforeSend = TRUE, and
+ * DurableRecvdSub / dRecvdEqRecvd need RecvdDurable = TRUE. Under the fault configs those
+ * are FALSE — correctly, since SafetyLe genuinely fails there. CertD must not be reused
+ * across the fault matrix; `make apalache-inductive` runs both fault configs as negative
+ * controls and requires the certificate to FAIL on each.
+ *)
 =============================================================================

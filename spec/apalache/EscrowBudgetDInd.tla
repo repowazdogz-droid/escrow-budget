@@ -46,10 +46,21 @@ IndD5 ==
 \* ---- iteration 6: add LagOrder (excludes CTI-5) ----
 IndD6 == IndD5 /\ LagOrder
 
-\* ---- diagnosed from CTI-6, NOT step-checked (6-iteration budget spent) ----
+\* ---- iteration 7: exclude CTI-6 -> CLOSES Floor D ----
 \* With RecvdDurable = TRUE, Recv writes recvd[m.to] and dRecvd[m.to] in the same step,
 \* Persist copies recvd -> dRecvd, and Crash copies dRecvd -> recvd. So they are EQUAL,
-\* which is strictly stronger than DurableRecvdSub. This is the recommended iteration 7.
+\* which is strictly stronger than DurableRecvdSub.
 dRecvdEqRecvd == \A r \in Replicas : dRecvd[r] = recvd[r]
-IndD7_UNVERIFIED == IndD6 /\ dRecvdEqRecvd
+
+\* CertD is INDUCTIVE at the fixed constants of EscrowBudgetD.cfg (base + step both
+\* discharged by Apalache 0.58.3). It implies SafetyLe, hence Safety. NOT a proof for all N.
+CertD == IndD6 /\ dRecvdEqRecvd
+
+\* CertD spelled out WITHOUT DurableRecvdSub, to test whether dRecvdEqRecvd subsumes it.
+CertDMinimal ==
+  /\ TypeOK /\ SafetyLe
+  /\ RecvdOnlyAddressed /\ dRecvdAddressed /\ TidUnique /\ AmtOfSentOnly
+  /\ DurableSafetyLe
+  /\ DurableSpentLe /\ DurableEscrowGe /\ LagOrder
+  /\ dRecvdEqRecvd
 =============================================================================
