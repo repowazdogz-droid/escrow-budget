@@ -135,5 +135,94 @@ rounds and would say the honest answer is "I cannot predict this yet".
 
 ## Scoring
 
-*(appended after the prediction was committed and tagged — see the git tag
-`prediction-twophase` for the pre-registration commit)*
+*Appended after the pre-registration commit `4fa6271`, tagged `prediction-twophase`.*
+
+### Result: WRONG, on both the band and the discriminating prediction
+
+| | predicted | actual |
+|---|---|---|
+| COARSE conjuncts | 2–4 (point 3) | **7** |
+| vs Floor D's 5 | strictly fewer | **more** |
+
+The published `Inv` in `TwoPhase_proof.tla` has 9 auxiliary conjuncts beyond `TPTypeOK`.
+Greedy-minimised under the pre-registered rule it comes to **7** (`C3` and `C4` drop out):
+
+```tla
+C1 == ~ (CommitMsg \in msgs /\ AbortMsg \in msgs)
+C2 == tmState = "init" => CommitMsg \notin msgs /\ AbortMsg \notin msgs
+C5 == \A rm \in tmPrepared : PrepMsg(rm) \in msgs
+C6 == \A rm \in RM : PrepMsg(rm) \in msgs => rmState[rm] # "working"
+C7 == \A rm \in RM : rmState[rm] = "committed" => CommitMsg \in msgs
+C8 == CommitMsg \in msgs => \A rm \in RM : PrepMsg(rm) \in msgs
+C9 == \A rm \in RM : rmState[rm] = "aborted" =>
+         \/ AbortMsg \in msgs \/ PrepMsg(rm) \notin msgs
+```
+
+**The granularity escape hatch is closed.** COARSE = 7 and FINE = 7 under the pre-registered
+rule (no surviving conjunct has a `/\` directly under a quantifier). Under a stricter rule
+that also distributes `=>` over `/\`, FINE = 8. The counts agree, so the measurement
+discriminates and the miss cannot be blamed on phrasing.
+
+### Method
+
+Checked with **TLC**, not Apalache: `msgs` mixes record shapes (`[type, rm]` and `[type]`),
+which Apalache's type system rejects without a variant encoding. TLC does the inductive check
+directly because the candidate is finitely enumerable — supply it as `INIT`, `TPNext` as
+`NEXT`, and check the candidate plus `TCConsistent` as invariants. Three obligations per
+candidate: reachable-state truth, one-step preservation, and implication of `TCConsistent`.
+
+The same guard discipline applies in TLC form: a candidate must generate **many** initial
+states (532 for the published set). If TLC reports ≤1 initial state with no violation, it
+silently used `TPInit` and the check is void. One refinement was needed — TLC aborts
+mid-enumeration when it finds a violation, so it never prints the "Finished computing initial
+states" line; that is a legitimate failure, not a guard failure, and the two must be
+distinguished or every genuine rejection looks like a broken harness.
+
+`TPTypeOK` was restated as `TPTypeOKEnum` (`\subseteq S` → `\in SUBSET S`) so TLC can use it
+as a generator. The two forms were model-checked equivalent on all reachable states.
+
+### What this refutes
+
+TwoPhase has **no** wholesale-replacing action — no crash, no rollback, no durable/volatile
+pair, `msgs` monotone — and it needs **7** conjuncts. Floor D **has** such an action and needs
+**5**. The revised diagnostic predicted the opposite ordering. It is wrong.
+
+That is two mechanisms proposed and two refuted:
+
+1. *"difficulty tracks a nameable conserved quantity"* — refuted by the atomic-write variant,
+   which has one and still needs 4.
+2. *"difficulty tracks components a single action installs wholesale"* — refuted here, by a
+   spec with none that needs more than the spec with one.
+
+### What survives
+
+Only the negative claim, and it survives cleanly:
+
+| spec | reachable states | minimal conjuncts |
+|---|---|---|
+| `Recovery` | 35 | 1 |
+| `EscrowBudget` (Floor A) | 257 | 2 |
+| `TwoPhase` (3 RMs) | **288** | **7** |
+| `EscrowBudgetD` | 56 | 5 |
+
+Floor A and TwoPhase have near-identical state spaces (257 vs 288) and differ 3.5× in
+conjuncts. **State-space size predicts nothing.** That is now supported by an outside spec.
+
+### The honest position
+
+I cannot predict conjunct count from spec structure with any heuristic tried so far. The
+plausible reading of TwoPhase — that its cost comes from relating a monotone message history
+to two state variables, one conjunct per "what does this message imply about state" fact — is
+a *post-hoc* explanation invented after seeing the answer, exactly like the two that already
+failed. It is recorded as a hypothesis with no predictive credit, and it does not go into
+`METHOD-NOTE.md` as a diagnostic.
+
+A third mechanism would need to be pre-registered against a spec not yet examined before it
+means anything.
+
+### Incidental observation
+
+Both published/derived certificates examined carried redundant conjuncts: Floor D's 9 → 5,
+TwoPhase's published 9 → 7. Small n, but it suggests inductive invariants as written tend to
+be non-minimal, and that comparisons using as-written counts (as the first version of
+`METHOD-NOTE.md` did) will be inflated.
