@@ -102,6 +102,25 @@ obligation() {
   fi
 }
 
+# --- single-candidate mode (used to drive CTI iteration) -------------------
+# usage: apalache-inductive.sh <module> <cfg> <certificate> [base|step|both]
+# Runs the SAME trap-guarded obligation() as the shipped certification below, so a CTI
+# loop cannot accidentally bypass the --init assertion. With no arguments the script
+# behaves exactly as before and certifies the two shipped certificates.
+if [ "$#" -ge 3 ]; then
+  MOD="$1"; CFG="$2"; CERT="$3"; KIND="${4:-both}"
+  echo "Apalache single-candidate check: $MOD / $CERT  (cfg $CFG)"
+  echo "  binary : $APALACHE_BIN ($("$APALACHE_BIN" version 2>/dev/null | tail -1))"
+  case "$KIND" in
+    base) obligation "$MOD" "$CFG" "$CERT" base || rc=1 ;;
+    step) obligation "$MOD" "$CFG" "$CERT" step || rc=1 ;;
+    both) obligation "$MOD" "$CFG" "$CERT" base || rc=1
+          obligation "$MOD" "$CFG" "$CERT" step || rc=1 ;;
+    *) echo "unknown kind: $KIND"; exit 2 ;;
+  esac
+  exit "$rc"
+fi
+
 echo "Apalache inductiveness certification"
 echo "  binary : $APALACHE_BIN ($("$APALACHE_BIN" version 2>/dev/null | tail -1))"
 echo "  NOTE   : certified at the FIXED CONSTANTS in each cfg, not for all N."
