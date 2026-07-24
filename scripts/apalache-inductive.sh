@@ -136,18 +136,31 @@ obligation Recovery Recovery_Safe.cfg Cert base || rc=1
 obligation Recovery Recovery_Safe.cfg Cert step || rc=1
 
 echo
-echo "NEGATIVE CONTROL — under SafeReclaim = FALSE the same Cert must FAIL its step."
-echo "                   (if this ever passes, the check has gone vacuous)"
-if obligation Recovery Recovery_Unsafe.cfg Cert step >/dev/null 2>&1; then
-  echo "  FAIL  negative control PASSED — Cert should not be inductive under unguarded reclaim"
-  rc=1
-else
-  echo "  OK    negative control failed as required — the check has teeth"
-fi
+echo "EscrowBudgetD — CertDMinimal (crash/recovery; 7 CTI rounds, see FLOORD-CTI.md)"
+echo "                 9 auxiliary conjuncts. CertD, the as-iterated form, additionally"
+echo "                 carries DurableRecvdSub, verified redundant given dRecvdEqRecvd."
+obligation EscrowBudgetDInd EscrowBudgetD.cfg CertDMinimal base || rc=1
+obligation EscrowBudgetDInd EscrowBudgetD.cfg CertDMinimal step || rc=1
+obligation EscrowBudgetDInd EscrowBudgetD.cfg CertD        step || rc=1
+
+echo
+echo "NEGATIVE CONTROLS — each certificate must FAIL where the property genuinely fails."
+echo "                    (if any of these passes, that check has gone vacuous)"
+neg() { # <label> <module> <cfg> <cert>
+  if obligation "$2" "$3" "$4" step >/dev/null 2>&1; then
+    printf "  FAIL  %-34s certificate PASSED where it must not\n" "$1"; return 1
+  else
+    printf "  OK    %-34s failed as required\n" "$1"; return 0
+  fi
+}
+neg "Recovery / SafeReclaim=FALSE"      Recovery         Recovery_Unsafe.cfg             Cert  || rc=1
+neg "EscrowBudgetD / lazy debit"        EscrowBudgetDInd EscrowBudgetD_LazyDebit.cfg     CertDMinimal || rc=1
+neg "EscrowBudgetD / volatile recvd"    EscrowBudgetDInd EscrowBudgetD_VolatileRecvd.cfg CertDMinimal || rc=1
 
 echo
 if [ "$rc" -eq 0 ]; then
-  echo "INDUCTIVE: OK — both certificates discharged, --init honoured on every step obligation."
+  echo "INDUCTIVE: OK — all three certificates discharged, --init honoured on every step"
+  echo "           obligation, and every negative control failed as required."
 else
   echo "INDUCTIVE: FAIL"
 fi
