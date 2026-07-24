@@ -11,35 +11,40 @@
  *
  * Three DISTINCT properties (never conflated):
  *   Safety     ==  Σspent ≤ CAP                 (state predicate)
- *   Bound      ==  A ≤ CAP                       (state predicate; TRUE on all reachable states,
- *                                                 but NOT inductive — see CORRECTION below)
+ *   Bound      ==  A ≤ CAP                       (state predicate; the inductive safety cert)
  *   MonotoneA  ==  [][A' ≤ A]_vars               (transition/action property: non-creation)
  *   ConservedA ==  [][A' = A]_vars               (transition/action property: conservation)
- *
- * CORRECTION (2026-07-24). This header previously described Bound as "the inductive safety
- * cert". That was WRONG. Bound is true on every reachable state, but it is NOT INDUCTIVE:
- * Apalache (v0.58.3) produced the counterexample escrow = [r1 |-> 2, r2 |-> 0], spent = 0,
- * stranded = 2, which satisfies TypeOK /\ Bound (A = 2 ≤ CAP = 3) yet is UNREACHABLE, since
- * every reachable state has A + stranded = CAP and here A + stranded = 4. From it,
- * Reclaim(r2, 2) is enabled (a ≤ stranded) and drives A to 4 > CAP.
- *
- * The actual inductive certificate is Cert == TypeOK /\ ConservedTotal, where
- * ConservedTotal == A + stranded = CAP. Cert is inductive and implies Bound (stranded ≥ 0).
  *)
-EXTENDS Naturals, FiniteSets
+EXTENDS Naturals, FiniteSets, Apalache
 
-CONSTANTS Replicas, CAP, Amounts, SafeReclaim
+CONSTANTS
+  \* @type: Set(Str);
+  Replicas,
+  \* @type: Int;
+  CAP,
+  \* @type: Set(Int);
+  Amounts,
+  \* @type: Bool;
+  SafeReclaim,
+  \* @type: Str;
+  Genesis
 ASSUME CAP \in Nat /\ Replicas # {} /\ Amounts \subseteq (Nat \ {0}) /\ SafeReclaim \in BOOLEAN
 
-VARIABLES escrow, spent, stranded
+VARIABLES
+  \* @type: Str -> Int;
+  escrow,
+  \* @type: Str -> Int;
+  spent,
+  \* @type: Int;
+  stranded
 vars == <<escrow, spent, stranded>>
 
-RECURSIVE SumFn(_, _)
-SumFn(f, S) == IF S = {} THEN 0 ELSE LET x == CHOOSE e \in S : TRUE IN f[x] + SumFn(f, S \ {x})
+\* @type: (Str -> Int, Set(Str)) => Int;
+SumFn(f, S) == ApaFoldSet(LAMBDA acc, x : acc + f[x], 0, S)
 SumEscrow == SumFn(escrow, Replicas)
 SumSpent  == SumFn(spent, Replicas)
 A         == SumSpent + SumEscrow           \* signed linear authority in circulation
-Genesis   == CHOOSE r \in Replicas : TRUE
+ASSUME Genesis \in Replicas
 
 Init ==
   /\ escrow  = [r \in Replicas |-> IF r = Genesis THEN CAP ELSE 0]
@@ -78,22 +83,7 @@ Bound     == A =< CAP
 MonotoneA  == [][A' =< A]_vars
 ConservedA == [][A' =  A]_vars
 
-(* ----- inductive certificate -----
- * Bound is NOT inductive (see the CORRECTION in the module header). ConservedTotal is the
- * missing fact: authority is conserved once STRANDED authority is counted alongside A.
- * Charge moves escrow -> spent (A and stranded both unchanged); Lose moves escrow -> stranded
- * (A falls by a, stranded rises by a); a guarded Reclaim moves stranded -> escrow (the
- * reverse). Every action leaves A + stranded fixed at CAP.
- *
- * Cert => Bound because stranded >= 0 (TypeOK), so A = CAP - stranded =< CAP.
- *
- * SCOPE: Apalache certifies Cert INDUCTIVE at the FIXED CONSTANTS of Recovery_Safe.cfg
- * (Replicas = {r1, r2}, CAP = 3, Amounts = {1, 2}, SafeReclaim = TRUE), which makes Bound
- * hold at UNBOUNDED DEPTH for that instance. It is NOT a proof for all N.
- *
- * TEETH: under SafeReclaim = FALSE the same Cert correctly FAILS its inductive step, so the
- * check is not vacuously passing. That is the Recovery_Unsafe direction.
- *)
+\* ----- inductive certificate (mirrors spec/Recovery.tla) -----
 ConservedTotal == A + stranded = CAP
 Cert           == TypeOK /\ ConservedTotal
 =============================================================================

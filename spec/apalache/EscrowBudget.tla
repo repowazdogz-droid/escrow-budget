@@ -24,11 +24,16 @@
  * moves a UNIT (1) of budget, so InFlight is a count. Crash/recovery and partition are
  * added in Floors C/D; this floor establishes the protocol and the invariant.
  *)
-EXTENDS Naturals, FiniteSets
+EXTENDS Naturals, FiniteSets, Apalache
 
-CONSTANTS Replicas,  \* set of replica identifiers
+CONSTANTS
+          \* @type: Set(Str);
+          Replicas,  \* set of replica identifiers
+          \* @type: Int;
           CAP,       \* global cap (a natural number)
+          \* @type: Set(Str);
           Cids,      \* finite set of charge-operation ids (for idempotent retry)
+          \* @type: Set(Str);
           Tids       \* finite set of transfer ids (for idempotent delivery / dedup)
 
 ASSUME CAP \in Nat
@@ -38,18 +43,23 @@ ASSUME Replicas # {}
 Messages == [to : Replicas, tid : Tids]
 
 VARIABLES
+  \* @type: Str -> Int;
   escrow,   \* [Replicas -> Nat]  local, uncoordinated spend rights
+  \* @type: Str -> Int;
   spent,    \* [Replicas -> Nat]  consumption already authorised at each replica
+  \* @type: Set({ to: Str, tid: Str });
   net,      \* SUBSET Messages    in-flight transfers (a SET: unordered => reorder)
+  \* @type: Set(Str);
   applied,  \* SUBSET Cids        charge ids already applied (idempotency)
+  \* @type: Set(Str);
   sentT,    \* SUBSET Tids        transfer ids debited from some sender
+  \* @type: Set(Str);
   recvd     \* SUBSET Tids        transfer ids already credited at their destination
 
 vars == <<escrow, spent, net, applied, sentT, recvd>>
 
-RECURSIVE SumFn(_, _)
-SumFn(f, S) == IF S = {} THEN 0
-               ELSE LET r == CHOOSE x \in S : TRUE IN f[r] + SumFn(f, S \ {r})
+\* @type: (Str -> Int, Set(Str)) => Int;
+SumFn(f, S) == ApaFoldSet(LAMBDA acc, r : acc + f[r], 0, S)
 
 SumEscrow == SumFn(escrow, Replicas)
 SumSpent  == SumFn(spent, Replicas)
@@ -57,7 +67,12 @@ SumSpent  == SumFn(spent, Replicas)
 InFlight  == Cardinality(sentT \ recvd)
 
 \* The designated genesis replica initially holds the entire cap as escrow.
-Genesis == CHOOSE r \in Replicas : TRUE
+\* NOTE (Apalache): originally `CHOOSE r \in Replicas : TRUE`. Apalache does not pin CHOOSE to a
+\* single witness across occurrences, so Init admitted an unfunded state. Made a CONSTANT.
+CONSTANT
+  \* @type: Str;
+  Genesis
+ASSUME Genesis \in Replicas
 
 Init ==
   /\ escrow  = [r \in Replicas |-> IF r = Genesis THEN CAP ELSE 0]
@@ -128,26 +143,7 @@ Conserved == SumSpent + SumEscrow + InFlight = CAP
 \* The safety theorem, a corollary of Conserved and non-negativity.
 Safety == SumSpent =< CAP
 
-(* ----- inductive certificate -----
- * Conserved is TRUE on every reachable state, but it is NOT INDUCTIVE on its own: from an
- * arbitrary state satisfying TypeOK /\ Conserved, one step can break it. Apalache's
- * counterexample (v0.58.3): spent = [r1 |-> 2], escrow = [r1 |-> 0, r2 |-> 0], sentT = {},
- * recvd = {}, but net = {[to |-> r1, tid |-> t2]} — a message in flight whose tid was never
- * debited by any sender. Recv's guard only requires m \in net, so it fires, credits
- * escrow[r1], and the sum becomes 2 + 1 + 0 = 3 # CAP.
- *
- * That pre-state is UNREACHABLE — SendXfer is the only producer of net messages and it adds
- * to sentT in the same step — but nothing in TypeOK /\ Conserved says so. NetTidsSent is the
- * missing conjunct.
- *
- * SCOPE: Inductive is certified INDUCTIVE by Apalache at the FIXED CONSTANTS of
- * EscrowBudget.cfg (Replicas = {r1, r2}, CAP = 2, Cids = {c1, c2}, Tids = {t1, t2}), which
- * makes Safety hold at UNBOUNDED DEPTH for that instance. It is NOT a proof for all N: the
- * constants are still fixed, so this does not generalise over replica or id count.
- *)
+\* ----- inductive certificate (mirrors spec/EscrowBudget.tla) -----
 NetTidsSent == \A m \in net : m.tid \in sentT
-
-\* The inductive strengthening: Init => Inductive, Inductive /\ Next => Inductive', and
-\* Inductive => Safety, all three discharged by Apalache at the constants above.
-Inductive == TypeOK /\ Conserved /\ NetTidsSent
+Inductive   == TypeOK /\ Conserved /\ NetTidsSent
 =============================================================================
